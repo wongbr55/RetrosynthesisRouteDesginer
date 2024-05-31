@@ -6,6 +6,76 @@ from rdkit import Chem
 from rdkit.Chem.rdchem import Mol
 from rdkit.Chem import rdChemReactions
 from rdkit.Chem.rdChemReactions import ChemicalReaction
+from rdkit.Chem import Draw
+
+##################################################################################################
+# CORE EXTRACTION
+##################################################################################################
+
+
+def get_reaction_core_for_single_reaction(reactant_smiles: list[str], product_smiles: list[str]):
+    """
+    Runs the full reaction core extraction
+    :param reactant_smiles:
+    :param product_smiles:
+    :return:
+    """
+    # setup Mol objects
+    reactant_mol = []
+    product_mol = []
+    for smile in reactant_smiles:
+        new_mol = Chem.MolFromSmiles(smile)
+        new_mol.SetProp("RXN", "reactant")
+        reactant_mol.append(new_mol)
+    for smile in product_smiles:
+        new_mol = Chem.MolFromSmiles(smile)
+        new_mol.SetProp("RXN", "product")
+        product_mol.append(new_mol)
+
+    reactant_smarts = [Chem.MolToSmarts(reactant) for reactant in reactant_mol]
+    product_smarts = [Chem.MolToSmarts(product) for product in product_mol]
+    reactants_smarts = '.'.join(reactant_smarts)
+    products_smarts = '.'.join(product_smarts)
+    rxn_smarts = f'{reactants_smarts}>>{products_smarts}'
+
+    # setup ChemicalReaction
+    reaction = Chem.rdChemReactions.ReactionFromSmarts(rxn_smarts)
+    # get core
+    # we create a new Mol object using the changed Atoms and Bonds
+    changed_props = get_reaction_core_helper(reactant_mol, reaction)
+
+    # code to check and see if reaction core is what we want it to be
+    # reactant_img = highlight_reaction_core(reactant_mol[0], changed_props[0], changed_props[1])
+    # product_img = highlight_reaction_core(product_mol[0], changed_props[0], changed_props[1])
+    #
+    # reactant_img.show()
+    # product_img.show()
+
+
+def get_reaction_core_helper(reactant_molecule_list: list[Mol], reaction: ChemicalReaction):
+    """
+    Identifies the reaction core of the reactants
+    Assume RXN property for reactant and product are set
+    :param reactant_molecule_list:
+    :return:
+    """
+
+    product_mols = reaction.RunReactants(reactant_molecule_list)
+
+    # get all the reaction cores
+    reaction_cores = []
+    for reactant in reactant_molecule_list:
+        new_core = get_reaction_core_for_single_reactant(reactant, product_mols[0])
+        reaction_cores.append(new_core)
+
+    # find intersection of all the cores
+    changed_atoms = set()
+    changed_bonds = set()
+    for core in reaction_cores:
+        changed_atoms = changed_atoms.symmetric_difference(core[0])
+        changed_bonds = changed_bonds.symmetric_difference(core[1])
+
+    return changed_atoms, changed_bonds
 
 
 def get_reaction_core_for_single_reactant(reaction_molecule: Mol, products: list[Mol]):
@@ -46,64 +116,19 @@ def get_reaction_core_for_single_reactant(reaction_molecule: Mol, products: list
     return changed_atoms, changed_bonds
 
 
-def get_reaction_core_helper(reactant_molecule_list: list[Mol], reaction: ChemicalReaction):
+def highlight_reaction_core(mol, changing_atoms, changing_bonds):
     """
-    Identifies the reaction core of the reactants
-    Assume RXN property for reactant and product are set
-    :param reactant_molecule_list:
+    Draws highlted reaction core on reactant and product
+    :param mol:
+    :param changing_atoms:
+    :param changing_bonds:
     :return:
     """
-
-    product_mols = reaction.RunReactants(reactant_molecule_list)
-
-    # get all the reaction cores
-    reaction_cores = []
-    for reactant in reactant_molecule_list:
-        new_core = get_reaction_core_for_single_reactant(reactant, product_mols)
-        reaction_cores.append(new_core)
-
-    # find intersection of all the cores
-    changed_atoms = set()
-    changed_bonds = set()
-    for core in reaction_cores:
-        changed_atoms = changed_atoms.symmetric_difference(core[0])
-        changed_bonds = changed_bonds.symmetric_difference(core[1])
-
-    return changed_atoms, changed_bonds
+    atom_indices = [atom.GetIdx() for atom in mol.GetAtoms() if atom.GetAtomMapNum() in changing_atoms]
+    bond_indices = [bond.GetIdx() for bond in mol.GetBonds() if
+                    (bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()) in changing_bonds or (
+                        bond.GetEndAtomIdx(), bond.GetBeginAtomIdx()) in changing_bonds]
+    return Draw.MolToImage(mol, highlightAtoms=atom_indices, highlightBonds=bond_indices)
 
 
-def get_reaction_core_for_single_reaction(reactant_smiles: list[str], product_smiles: list[str]):
-    """
-    Runs the full reaction core extraction
-    :param reactant_smiles:
-    :param product_smiles:
-    :return:
-    """
-    # setup Mol objects
-    reactant_mol = []
-    product_mol = []
-    for smile in reactant_smiles:
-        new_mol = Chem.MolFromSmiles(smile)
-        new_mol.SetProp("RXN", "reactant")
-        reactant_mol.append(new_mol)
-    for smile in product_smiles:
-        new_mol = Chem.MolFromSmiles(smile)
-        new_mol.SetProp("RXN", "product")
-        product_mol.append(new_mol)
-
-    # setup ChemicalReaction
-    reaction = Chem.rdChemReactions.ReactionFromMolecule(reactant_mol[0])
-    for i in range(1, len(reactant_mol)):
-        reaction.AddReactantTemplate(reactant_mol[i])
-    for product in product_mol:
-        reaction.AddProductTemplate(product)
-
-    # get core
-    # we create a new Mol object using the changed Atoms and Bonds
-    changed_props = get_reaction_core_helper(reactant_mol, reaction)
-    atom_conversion = {}
-    index = 0
-    for atom in changed_props[0]:
-
-        atom_conversion[atom] = index
-        index += 1
+##################################################################################################
