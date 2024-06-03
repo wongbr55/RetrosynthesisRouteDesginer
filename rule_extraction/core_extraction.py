@@ -149,6 +149,18 @@ def extend_reaction_core(reactant_mol: list[Mol], product_mol: list[Mol], reacti
         extend_primary_bonds(atom, reaction_core)
         # then we apply the general heurstics
         add_atoms_to_core(atom, reaction_core)
+    # get leaving groups and add them to the reaction core
+    get_leaving_group(reactant_mol, product_mol, reaction_core)
+
+
+def get_leaving_group(reactant_mol: list[Mol], product_mol: list[Mol], reaction_core: tuple[set[Atom], set[Bond]]) -> None:
+    """
+    Gets leaving group Atoms and Bonds and mutates reaction_core to add them
+    :param reactant_mol:
+    :param product_mol:
+    :param reaction_core:
+    :return:
+    """
 
     # check for leaving groups and add them to reaction core
     reactant_atom_set = set()
@@ -161,14 +173,14 @@ def extend_reaction_core(reactant_mol: list[Mol], product_mol: list[Mol], reacti
             if atom.GetAtomMapNum() > 0:
                 reactant_atom_set.add(atom)
         for bond in reactant.GetBonds():
-            if bond.GetBeginAtom in reactant_atom_set or bond.GetEndAtom in reactant_atom_set:
+            if bond.GetBeginAtom() in reactant_atom_set or bond.GetEndAtom() in reactant_atom_set:
                 reactant_bond_set.add(bond)
     for product in product_mol:
         for atom in product.GetAtoms():
             if atom.GetAtomMapNum() > 0:
                 product_atom_set.add(atom)
         for bond in product.GetBonds():
-            if bond.GetBeginAtom in product_atom_set or bond.GetEndAtom in product_atom_set:
+            if bond.GetBeginAtom() in product_atom_set or bond.GetEndAtom() in product_atom_set:
                 product_bond_set.add(bond)
 
     leaving_group_atoms = reactant_atom_set.symmetric_difference(product_atom_set)
@@ -176,7 +188,10 @@ def extend_reaction_core(reactant_mol: list[Mol], product_mol: list[Mol], reacti
     for leaving_atom in leaving_group_atoms:
         reaction_core[0].add(leaving_atom)
     for leaving_bond in leaving_group_bonds:
-        reaction_core[1].add(leaving_bond)
+        if (leaving_bond.GetBeginAtom() not in reaction_core[0] and leaving_bond.GetEndAtom() not in reaction_core[0])\
+                and (leaving_bond.GetBeginAtom() in reactant_atom_set and
+                     leaving_bond.GetEndAtom() in reactant_atom_set):
+            reaction_core[1].add(leaving_bond)
 
 
 def extend_primary_bonds(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]) -> None:
