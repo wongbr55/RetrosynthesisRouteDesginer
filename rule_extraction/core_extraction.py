@@ -179,7 +179,6 @@ def extend_reaction_core(reactant_mol: list[Mol], product_mol: list[Mol], reacti
         reaction_core[1].add(leaving_bond)
 
 
-
 def extend_primary_bonds(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]):
     """
     Adds new atoms to reaction core
@@ -192,6 +191,7 @@ def extend_primary_bonds(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]])
     :param reaction_core:
     :return:
     """
+    have_searched_aromatic = False
     for bond in atom.GetBonds():
         if atom == bond.GetEndAtom():
             new_atom = bond.GetBeginAtom()
@@ -211,7 +211,37 @@ def extend_primary_bonds(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]])
                 reaction_core[1].add(secondary_bond)
 
         # check for aromatic bonds
-        if bond.GetIsAromatic():
+        if bond.GetIsAromatic() and not have_searched_aromatic:
+            get_aromatic_ring(atom, reaction_core)
+            have_searched_aromatic = True
+
+
+def get_aromatic_ring(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]):
+    """
+    Gets all the atoms and bonds in an aromatic ring
+    Mutates the
+    :param atom:
+    :param reaction_core:
+    :return:
+    """
+
+    ownning_mol = atom.GetOwningMol()
+    aromatic_rings = Chem.GetSymmSSSR(ownning_mol)
+
+    # find the aromatic ring containing atom
+    aromatic_ring_containing_atom = None
+    for ring in aromatic_rings:
+        if atom.GetIdx() in ring:
+            aromatic_ring_containing_atom = ring
+            break
+
+    # retrieve bonds connected to atom in the ring
+    for bond_idx in aromatic_ring_containing_atom:
+        bond = ownning_mol.GetBondWithIdx(bond_idx)
+        reaction_core[1].add(bond)
+        # we can add both atom objects as reaction_core[0] is a set, will not hold duplicates
+        reaction_core[0].add(bond.GetBeginAtomIdx)
+        reaction_core[0].add(bond.GetEndAtomIdx)
 
 
 def add_atoms_to_core(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]):
