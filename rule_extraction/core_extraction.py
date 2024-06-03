@@ -5,9 +5,8 @@ Implemented Herustics from Route Designer
 from rdkit import Chem
 from rdkit.Chem.rdchem import Mol, Atom, Bond
 from rdkit.Chem.rdchem.BondType import BondType
-from rdkit.Chem import rdChemReactions
+from rdkit.Chem import rdChemReactions, Draw
 from rdkit.Chem.rdChemReactions import ChemicalReaction
-from rdkit.Chem import Draw
 
 ##################################################################################################
 # CORE EXTRACTION
@@ -154,15 +153,31 @@ def extend_reaction_core(reactant_mol: list[Mol], product_mol: list[Mol], reacti
     # check for leaving groups and add them to reaction core
     reactant_atom_set = set()
     product_atom_set = set()
+    reactant_bond_set = set()
+    product_bond_set = set()
 
     for reactant in reactant_mol:
         for atom in reactant.GetAtoms():
             if atom.GetAtomMapNum() > 0:
                 reactant_atom_set.add(atom)
+        for bond in reactant.GetBonds():
+            if bond.GetBeginAtom in reactant_atom_set or bond.GetEndAtom in reactant_atom_set:
+                reactant_bond_set.add(bond)
     for product in product_mol:
         for atom in product.GetAtoms():
             if atom.GetAtomMapNum() > 0:
                 product_atom_set.add(atom)
+        for bond in product.GetBonds():
+            if bond.GetBeginAtom in product_atom_set or bond.GetEndAtom in product_atom_set:
+                product_bond_set.add(bond)
+
+    leaving_group_atoms = reactant_atom_set.symmetric_difference(product_atom_set)
+    leaving_group_bonds = reactant_bond_set.symmetric_difference(product_bond_set)
+    for leaving_atom in leaving_group_atoms:
+        reaction_core[0].add(leaving_atom)
+    for leaving_bond in leaving_group_bonds:
+        reaction_core[1].add(leaving_bond)
+
 
 
 def extend_primary_bonds(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]):
@@ -244,6 +259,5 @@ def check_external_nonaromatic_bond(bond: Bond) -> bool:
     # check if the bond is external (not part of a ring)
     if atom1.IsInRing() or atom2.IsInRing():
         return False
-
     # otherwise we are good
     return True
