@@ -132,7 +132,7 @@ def highlight_reaction_core(mol, changing_atoms, changing_bonds):
 ##################################################################################################
 
 
-def extend_reaction_core(reactant_mol: list[Mol], product_mol: list[Mol], reaction_core: tuple[set[Atom], set[Bond]]):
+def extend_reaction_core(reactant_mol: list[Mol], product_mol: list[Mol], reaction_core: tuple[set[Atom], set[Bond]]) -> None:
     """
     Takes the current core in terms of atoms and bonds and extends the reaction core
     Heurstics found in section 2.2 of Route Desiginer paper
@@ -179,7 +179,7 @@ def extend_reaction_core(reactant_mol: list[Mol], product_mol: list[Mol], reacti
         reaction_core[1].add(leaving_bond)
 
 
-def extend_primary_bonds(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]):
+def extend_primary_bonds(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]) -> None:
     """
     Adds new atoms to reaction core
     Assume that atom is a member of the reaction core
@@ -216,7 +216,7 @@ def extend_primary_bonds(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]])
             have_searched_aromatic = True
 
 
-def get_aromatic_ring(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]):
+def get_aromatic_ring(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]) -> None:
     """
     Gets all the atoms and bonds in an aromatic ring
     Mutates the
@@ -244,7 +244,7 @@ def get_aromatic_ring(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]):
         reaction_core[0].add(bond.GetEndAtomIdx)
 
 
-def add_atoms_to_core(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]):
+def add_atoms_to_core(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]) -> None:
     """
     Adds new atoms to the reaction core
     Essentially employs a BFS search on molecule starting at atom
