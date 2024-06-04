@@ -1,5 +1,5 @@
 """
-Rule extraction. Used to create database/graph of possible product types to reactants
+Core extraction. Code provided extracts core from reactions
 Implemented Herustics from Route Designer
 """
 from rdkit import Chem
