@@ -4,7 +4,7 @@ Implemented Herustics from Route Designer
 """
 from rdkit import Chem
 from rdkit.Chem.rdchem import Mol, Atom, Bond
-from rdkit.Chem.rdchem.BondType import BondType
+from rdkit.Chem.rdchem import BondType
 from rdkit.Chem import rdChemReactions, Draw
 from rdkit.Chem.rdChemReactions import ChemicalReaction
 
@@ -13,9 +13,14 @@ from rdkit.Chem.rdChemReactions import ChemicalReaction
 ##################################################################################################
 
 
-def get_reaction_core_for_single_reaction(reactant_smiles: list[str], product_smiles: list[str]) -> tuple[set[Atom], set[Bond]]:
+def get_reaction_core_for_single_reaction(reactant_smiles: list[str], product_smiles: list[str]) -> \
+        tuple[tuple[set[Atom], set[Bond]], list[Mol], list[Mol]]:
     """
     Runs the full reaction core extraction
+    Returns a tuple:
+    first index is a tuple with new reaction core atoms and bonds
+    second index is list of reactant in Mol objects
+    third is list of products in Mol objects
     :param reactant_smiles:
     :param product_smiles:
     :return:
@@ -23,28 +28,33 @@ def get_reaction_core_for_single_reaction(reactant_smiles: list[str], product_sm
     # setup Mol objects
     reactant_mol = []
     product_mol = []
+    reaction = ChemicalReaction()
     for smile in reactant_smiles:
         new_mol = Chem.MolFromSmiles(smile)
-        new_mol.SetProp("RXN", "reactant")
+        # new_mol.SetProp("RXN", "reactant")
         reactant_mol.append(new_mol)
     for smile in product_smiles:
         new_mol = Chem.MolFromSmiles(smile)
-        new_mol.SetProp("RXN", "product")
+        # new_mol.SetProp("RXN", "product")
         product_mol.append(new_mol)
 
-    reactant_smarts = [Chem.MolToSmarts(reactant) for reactant in reactant_mol]
-    product_smarts = [Chem.MolToSmarts(product) for product in product_mol]
-    reactants_smarts = '.'.join(reactant_smarts)
-    products_smarts = '.'.join(product_smarts)
-    rxn_smarts = f'{reactants_smarts}>>{products_smarts}'
+    reactant_counter = 0
+    for reactant in reactant_mol:
+        for num in range(0, reactant.GetNumAtoms()):
+            reactant.GetAtomWithIdx(num).SetAtomMapNum(reactant_counter)
+            reactant_counter += 1
+        reaction.AddReactantTemplate(reactant)
 
-    # setup ChemicalReaction
-    reaction = Chem.rdChemReactions.ReactionFromSmarts(rxn_smarts)
+    product_counter = 0
+    for product in product_mol:
+        for num in range(0, product.GetNumAtoms()):
+            product.GetAtomWithIdx(num).SetAtomMapNum(product_counter)
+            product_counter += 1
+        reaction.AddProductTemplate(product)
+
     # get core
-    # we create a new Mol object using the changed Atoms and Bonds
     changed_props = get_reaction_core_helper(reactant_mol, reaction)
-
-    return changed_props
+    return changed_props, reactant_mol, product_mol
 
 
 def get_reaction_core_helper(reactant_molecule_list: list[Mol], reaction: ChemicalReaction) -> tuple[set[Atom], set[Bond]]:
@@ -62,7 +72,6 @@ def get_reaction_core_helper(reactant_molecule_list: list[Mol], reaction: Chemic
     for reactant in reactant_molecule_list:
         new_core = get_reaction_core_for_single_reactant(reactant, product_mols[0])
         reaction_cores.append(new_core)
-
     # find intersection of all the cores
     changed_atoms = set()
     changed_bonds = set()
@@ -270,19 +279,20 @@ def add_atoms_to_core(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]) ->
     """
 
     queue = [atom]
-
+    seen_so_far = set()
     while len(queue) != 0:
         curr_atom = queue.pop(0)
         for bond in curr_atom.GetBonds():
             if curr_atom == bond.GetEndAtom():
-                new_atom = bond.GetBeginAtom
+                new_atom = bond.GetBeginAtom()
             else:
                 new_atom = bond.GetEndAtom()
             if not check_external_nonaromatic_bond(bond) and new_atom not in reaction_core[0] and \
-                    bond not in reaction_core[1]:
+                    bond not in reaction_core[1] and new_atom not in seen_so_far:
                 reaction_core[0].add(new_atom)
                 reaction_core[1].add(bond)
                 queue.append(new_atom)
+        seen_so_far.add(curr_atom)
 
 
 def check_external_nonaromatic_bond(bond: Bond) -> bool:
