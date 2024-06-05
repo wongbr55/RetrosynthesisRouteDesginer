@@ -5,7 +5,7 @@ Implemented Herustics from Route Designer
 from rdkit import Chem
 from rdkit.Chem.rdchem import Mol, Atom, Bond
 from rdkit.Chem.rdchem import BondType
-from rdkit.Chem import rdChemReactions, Draw
+from rdkit.Chem import Draw
 from rdkit.Chem.rdChemReactions import ChemicalReaction
 
 ##################################################################################################
@@ -123,7 +123,7 @@ def get_reaction_core_for_single_reactant(reaction_molecule: Mol, products: list
 def highlight_reaction_core(mol, changing_atoms, changing_bonds):
     """
     Draws highlted reaction core on reactant and product
-    Only used for double-checking work
+    Only used for debugging
     :param mol:
     :param changing_atoms:
     :param changing_bonds:
@@ -271,7 +271,7 @@ def get_aromatic_ring(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]) ->
 def add_atoms_to_core(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]) -> None:
     """
     Adds new atoms to the reaction core
-    Essentially employs a BFS search on molecule starting at atom
+    Essentially employs a DFS search on molecule starting at atom
     Mutates reaction core for extension
     :param atom:
     :param reaction_core:
@@ -279,20 +279,19 @@ def add_atoms_to_core(atom: Atom, reaction_core: tuple[set[Atom], set[Bond]]) ->
     """
 
     queue = [atom]
-    seen_so_far = set()
+    atom_seen_so_far = set()
     while len(queue) != 0:
-        curr_atom = queue.pop(0)
+        curr_atom = queue.pop()
         for bond in curr_atom.GetBonds():
-            if curr_atom == bond.GetEndAtom():
-                new_atom = bond.GetBeginAtom()
-            else:
-                new_atom = bond.GetEndAtom()
+            new_atom = bond.GetOtherAtom(curr_atom)
             if not check_external_nonaromatic_bond(bond) and new_atom not in reaction_core[0] and \
-                    bond not in reaction_core[1] and new_atom not in seen_so_far:
+                    bond not in reaction_core[1] and new_atom.GetAtomMapNum() not in atom_seen_so_far:
                 reaction_core[0].add(new_atom)
                 reaction_core[1].add(bond)
                 queue.append(new_atom)
-        seen_so_far.add(curr_atom)
+            elif check_external_nonaromatic_bond(bond):
+                atom_seen_so_far.add(new_atom)
+        atom_seen_so_far.add(curr_atom.GetAtomMapNum())
 
 
 def check_external_nonaromatic_bond(bond: Bond) -> bool:
