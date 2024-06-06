@@ -93,32 +93,98 @@ def get_reaction_core_for_single_reactant(reaction_molecule: Mol, products: list
     reactant_atom_set = set()
     product_atom_set = set()
 
+    # reactant_bond_set = set()
+    # product_bond_set = set()
+    #
+    # for bond in reaction_molecule.GetBonds():
+    #     if bond.GetBeginAtom().GetAtomMapNum() > 0 or bond.GetEndAtom().GetAtomMapNum() > 0:
+    #         reactant_bond_set.add(bond)
+    #
+    # for product in products:
+    #     for bond in product.GetBonds():
+    #         if bond.GetBeginAtom().GetAtomMapNum() > 0 or bond.GetEndAtom().GetAtomMapNum() > 0:
+    #             product_bond_set.add(bond)
+    #
+    # changed_bonds = reactant_bond_set.symmetric_difference(product_bond_set)
+    #
+    # changed_atoms_1 = {bond.GetBeginAtom() for bond in changed_bonds}
+    # changed_atoms_2 = {bond.GetEndAtom() for bond in changed_bonds}
+    # changed_atoms = changed_atoms_1.union(changed_atoms_2)
+
+    changed_atoms = set()
+    changed_bonds = set()
+
     for atom in reaction_molecule.GetAtoms():
-        if atom.GetAtomMapNum() > 0:
-            reactant_atom_set.add(atom)
-    for product in products:
-        for atom in product.GetAtoms():
-            if atom.GetAtomMapNum() > 0:
-                product_atom_set.add(atom)
+        index = atom.GetAtomMapNum()
 
-    changed_atoms = reactant_atom_set.symmetric_difference(product_atom_set)
+        for product in products:
+            for prod_atom in product:
+                # once we found the matching atom, we compare attributes
+                if prod_atom.GetAtomMapNum() == index:
+                    if atom.GetDegree() != prod_atom.GetDegree():
+                        changed_atoms.add(atom)
 
-    reactant_bond_set = set()
-    product_bond_set = set()
+    # for atom in reaction_molecule.GetAtoms():
+    #     if atom.GetAtomMapNum() >= 0:
+    #         reactant_atom_set.add(atom)
+    # for product in products:
+    #     for atom in product.GetAtoms():
+    #         if atom.GetAtomMapNum() >= 0:
+    #             product_atom_set.add(atom)
 
-    for bond in reaction_molecule.GetBonds():
-        if bond.GetBeginAtom() in changed_atoms or bond.GetEndAtom() in changed_atoms:
-            reactant_bond_set.add((bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()))
-
-    for product in products:
-        for bond in product.GetBonds():
-            if bond.GetBeginAtom() in changed_atoms or bond.GetEndAtom() in changed_atoms:
-                product_bond_set.add((bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()))
-
-    changed_bonds = reactant_bond_set.symmetric_difference(product_bond_set)
-
+    # changed_atoms = reactant_atom_set.symmetric_difference(product_atom_set)
     return changed_atoms, changed_bonds
 
+def find_matching_product_atom(reactant_atom: Atom, products: list[Mol]):
+    """
+    Finds the matching product atom for a given reaction atom reactant_atom
+    Returns the matching product atom
+    :param reactant_atom:
+    :param products:
+    :return:
+    """
+
+    raise NotImplemented
+
+
+def compare_props(reactant_atom: Atom, product_atom: Atom, product_list: list[Mol]):
+    """
+    Compares a fixed atom when it is in the reactant and when it is in the product
+    Returns boolean (whether atoms are the same or different)
+    :param reactant_atom:
+    :param product_atom:
+    :return:
+    """
+    if reactant_atom.GetDegree() != product_atom.GetDegree():
+        return False
+    if reactant_atom.GetFormalCharge() != product_atom.GetFormalCharge():
+        return False
+    for neighbour in reactant_atom.GetNeihbours():
+        product_neighbour = find_matching_product_atom(neighbour, product_list)
+        if product_neighbour not in product_atom.GetNeighbours():
+            return False
+    for bond in reactant_atom.GetBonds():
+        if not compare_bond(reactant_atom, product_atom, bond):
+            return False
+
+    return True
+
+def compare_bond(reactant_atom: Atom, product_atom: Atom, reactant_bond: Bond):
+    """
+
+    :param reactant_atom:
+    :param product_atom:
+    :param reactant_bond:
+    :return:
+    """
+    end_atom = reactant_bond.GetOtherAtom(reactant_atom)
+    for product_bond in product_atom.GetBonds():
+        if product_bond.GetOtherAtom(product_atom).GetAtomMapNum() == end_atom.GetAtomMapNum():
+            if product_bond.GetBondType() != reactant_bond.GetBondType():
+                return False
+
+            return True
+    return False
 
 def highlight_reaction_core(mol, changing_atoms, changing_bonds):
     """
