@@ -3,36 +3,33 @@ Core extraction. Code provided extracts core from reactions
 Implemented Herustics from Route Designer
 """
 from rdkit import Chem
-from rdkit.Chem.rdchem import Mol, Atom, Bond
-from rdkit.Chem.rdchem import BondType
+from rdkit.Chem.rdchem import Mol, Atom, Bond, BondType
 from rdkit.Chem import Draw
-
+from rdkit.Chem.rdChemReactions import ChemicalReaction
 ##################################################################################################
 # CORE EXTRACTION
 ##################################################################################################
 
 
-def get_reaction_core_for_single_reaction(reactant_smiles: list[str], product_smiles: list[str]) -> \
-        tuple[tuple[set[Atom], set[Bond]], list[Mol], list[Mol]]:
+def get_reaction_core_smiles(reaction_smarts: str) -> tuple[tuple[set[Atom], set[Bond]], list[Mol], list[Mol]]:
     """
-    Runs the full reaction core extraction
+    Runs the full reaction core
     Returns a tuple:
     first index is a tuple with new reaction core atoms and bonds
     second index is list of reactant in Mol objects
     third is list of products in Mol objects
-    :param reactant_smiles:
-    :param product_smiles:
     :return:
     """
+
+    reaction = Chem.rdChemReactions.ReactionFromSmarts(reaction_smarts)
+
     # setup Mol objects
     reactant_mol = []
     product_mol = []
-    for smile in reactant_smiles:
-        new_mol = Chem.MolFromSmiles(smile)
-        reactant_mol.append(new_mol)
-    for smile in product_smiles:
-        new_mol = Chem.MolFromSmiles(smile)
-        product_mol.append(new_mol)
+    for mol in reaction.GetReactants():
+        reactant_mol.append(mol)
+    for mol in reaction.GetProducts():
+        product_mol.append(mol)
 
     # get core
     changed_props = get_reaction_core_helper(reactant_mol, product_mol)
@@ -55,10 +52,16 @@ def get_reaction_core_helper(reactant_molecule_list: list[Mol], product_mols: li
     # find intersection of all the cores
     changed_atoms = set()
     changed_bonds = set()
-    # TODO fix symmetric difference of changed_bonds
+
     for core in reaction_cores:
         changed_atoms = changed_atoms.symmetric_difference(core[0])
         changed_bonds = changed_bonds.symmetric_difference(core[1])
+        bonds_no_duplicates = set()
+        # get rid of duplicates (i.e. if we have (2, 1) and (1, 2) in changed_bonds
+        for bond in changed_bonds:
+            if (bond[1], bond[0]) not in changed_bonds:
+                bonds_no_duplicates.add(bond)
+        changed_bonds = bonds_no_duplicates
 
     return changed_atoms, changed_bonds
 
