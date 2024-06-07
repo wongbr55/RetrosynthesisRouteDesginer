@@ -38,26 +38,26 @@ def get_reaction_core_for_single_reaction(reactant_smiles: list[str], product_sm
         # new_mol.SetProp("RXN", "product")
         product_mol.append(new_mol)
 
-    reactant_counter = 0
+    reactant_counter = 1
     for reactant in reactant_mol:
-        for num in range(0, reactant.GetNumAtoms()):
-            reactant.GetAtomWithIdx(num).SetAtomMapNum(reactant_counter)
+        for atom in reactant.GetAtoms():
+            atom.SetAtomMapNum(reactant_counter)
             reactant_counter += 1
         reaction.AddReactantTemplate(reactant)
 
-    product_counter = 0
+    product_counter = 1
     for product in product_mol:
-        for num in range(0, product.GetNumAtoms()):
-            product.GetAtomWithIdx(num).SetAtomMapNum(product_counter)
+        for atom in product.GetAtoms():
+            atom.SetAtomMapNum(product_counter)
             product_counter += 1
         reaction.AddProductTemplate(product)
 
     # get core
-    changed_props = get_reaction_core_helper(reactant_mol, reaction)
+    changed_props = get_reaction_core_helper(reactant_mol, product_mol)
     return changed_props, reactant_mol, product_mol
 
 
-def get_reaction_core_helper(reactant_molecule_list: list[Mol], reaction: ChemicalReaction) -> tuple[set[Atom], set[Bond]]:
+def get_reaction_core_helper(reactant_molecule_list: list[Mol], product_mols: list[Mol]) -> tuple[set[Atom], set[Bond]]:
     """
     Identifies the reaction core of the reactants
     Assume RXN property for reactant and product are set
@@ -65,12 +65,10 @@ def get_reaction_core_helper(reactant_molecule_list: list[Mol], reaction: Chemic
     :return:
     """
 
-    product_mols = reaction.RunReactants(reactant_molecule_list)
-
     # get all the reaction cores
     reaction_cores = []
     for reactant in reactant_molecule_list:
-        new_core = get_reaction_core_for_single_reactant(reactant, product_mols[0])
+        new_core = get_reaction_core_for_single_reactant(reactant, product_mols)
         reaction_cores.append(new_core)
     # find intersection of all the cores
     changed_atoms = set()
@@ -90,50 +88,29 @@ def get_reaction_core_for_single_reactant(reaction_molecule: Mol, products: list
     :param products:
     :return: tuple[set]
     """
-    reactant_atom_set = set()
-    product_atom_set = set()
-
-    # reactant_bond_set = set()
-    # product_bond_set = set()
-    #
-    # for bond in reaction_molecule.GetBonds():
-    #     if bond.GetBeginAtom().GetAtomMapNum() > 0 or bond.GetEndAtom().GetAtomMapNum() > 0:
-    #         reactant_bond_set.add(bond)
-    #
-    # for product in products:
-    #     for bond in product.GetBonds():
-    #         if bond.GetBeginAtom().GetAtomMapNum() > 0 or bond.GetEndAtom().GetAtomMapNum() > 0:
-    #             product_bond_set.add(bond)
-    #
-    # changed_bonds = reactant_bond_set.symmetric_difference(product_bond_set)
-    #
-    # changed_atoms_1 = {bond.GetBeginAtom() for bond in changed_bonds}
-    # changed_atoms_2 = {bond.GetEndAtom() for bond in changed_bonds}
-    # changed_atoms = changed_atoms_1.union(changed_atoms_2)
 
     changed_atoms = set()
     changed_bonds = set()
+    changed_atom_map_num = set()
 
     for atom in reaction_molecule.GetAtoms():
         index = atom.GetAtomMapNum()
 
         for product in products:
-            for prod_atom in product:
+            for prod_atom in product.GetAtoms():
                 # once we found the matching atom, we compare attributes
                 if prod_atom.GetAtomMapNum() == index:
-                    if atom.GetDegree() != prod_atom.GetDegree():
+                    if not compare_props(atom, prod_atom, products):
                         changed_atoms.add(atom)
+                        changed_atom_map_num.add(atom.GetAtomMapNum())
 
-    # for atom in reaction_molecule.GetAtoms():
-    #     if atom.GetAtomMapNum() >= 0:
-    #         reactant_atom_set.add(atom)
-    # for product in products:
-    #     for atom in product.GetAtoms():
-    #         if atom.GetAtomMapNum() >= 0:
-    #             product_atom_set.add(atom)
+    for bond in reaction_molecule.GetBonds():
+        if bond.GetBeginAtom().GetAtomMapNum() in changed_atom_map_num and bond.GetEndAtom().GetAtomMapNum() in changed_atom_map_num:
+            changed_bonds.add((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))
 
     # changed_atoms = reactant_atom_set.symmetric_difference(product_atom_set)
     return changed_atoms, changed_bonds
+
 
 def find_matching_product_atom(reactant_atom: Atom, products: list[Mol]):
     """
@@ -144,7 +121,11 @@ def find_matching_product_atom(reactant_atom: Atom, products: list[Mol]):
     :return:
     """
 
-    raise NotImplemented
+    for product in products:
+        for atom in product.GetAtoms():
+            if reactant_atom.GetAtomMapNum() == atom.GetAtomMapNum():
+                return atom
+    return None
 
 
 def compare_props(reactant_atom: Atom, product_atom: Atom, product_list: list[Mol]):
@@ -155,19 +136,26 @@ def compare_props(reactant_atom: Atom, product_atom: Atom, product_list: list[Mo
     :param product_atom:
     :return:
     """
+
     if reactant_atom.GetDegree() != product_atom.GetDegree():
         return False
     if reactant_atom.GetFormalCharge() != product_atom.GetFormalCharge():
         return False
-    for neighbour in reactant_atom.GetNeihbours():
-        product_neighbour = find_matching_product_atom(neighbour, product_list)
-        if product_neighbour not in product_atom.GetNeighbours():
+
+    reactant_atom_neighbors = {atom.GetAtomMapNum() for atom in reactant_atom.GetNeighbors()}
+    product_atom_neighbors = {atom.GetAtomMapNum() for atom in product_atom.GetNeighbors()}
+    # print(reactant_atom_neighbors)
+    # print(product_atom_neighbors)
+    for reactant_num in reactant_atom_neighbors:
+        if reactant_num not in product_atom_neighbors:
             return False
+
     for bond in reactant_atom.GetBonds():
         if not compare_bond(reactant_atom, product_atom, bond):
             return False
 
     return True
+
 
 def compare_bond(reactant_atom: Atom, product_atom: Atom, reactant_bond: Bond):
     """
@@ -185,6 +173,7 @@ def compare_bond(reactant_atom: Atom, product_atom: Atom, reactant_bond: Bond):
 
             return True
     return False
+
 
 def highlight_reaction_core(mol, changing_atoms, changing_bonds):
     """
