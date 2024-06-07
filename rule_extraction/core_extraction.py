@@ -6,7 +6,6 @@ from rdkit import Chem
 from rdkit.Chem.rdchem import Mol, Atom, Bond
 from rdkit.Chem.rdchem import BondType
 from rdkit.Chem import Draw
-from rdkit.Chem.rdChemReactions import ChemicalReaction
 
 ##################################################################################################
 # CORE EXTRACTION
@@ -28,29 +27,12 @@ def get_reaction_core_for_single_reaction(reactant_smiles: list[str], product_sm
     # setup Mol objects
     reactant_mol = []
     product_mol = []
-    reaction = ChemicalReaction()
     for smile in reactant_smiles:
         new_mol = Chem.MolFromSmiles(smile)
-        # new_mol.SetProp("RXN", "reactant")
         reactant_mol.append(new_mol)
     for smile in product_smiles:
         new_mol = Chem.MolFromSmiles(smile)
-        # new_mol.SetProp("RXN", "product")
         product_mol.append(new_mol)
-
-    reactant_counter = 1
-    for reactant in reactant_mol:
-        for atom in reactant.GetAtoms():
-            atom.SetAtomMapNum(reactant_counter)
-            reactant_counter += 1
-        reaction.AddReactantTemplate(reactant)
-
-    product_counter = 1
-    for product in product_mol:
-        for atom in product.GetAtoms():
-            atom.SetAtomMapNum(product_counter)
-            product_counter += 1
-        reaction.AddProductTemplate(product)
 
     # get core
     changed_props = get_reaction_core_helper(reactant_mol, product_mol)
@@ -73,6 +55,7 @@ def get_reaction_core_helper(reactant_molecule_list: list[Mol], product_mols: li
     # find intersection of all the cores
     changed_atoms = set()
     changed_bonds = set()
+    # TODO fix symmetric difference of changed_bonds
     for core in reaction_cores:
         changed_atoms = changed_atoms.symmetric_difference(core[0])
         changed_bonds = changed_bonds.symmetric_difference(core[1])
@@ -100,7 +83,7 @@ def get_reaction_core_for_single_reactant(reaction_molecule: Mol, products: list
             for prod_atom in product.GetAtoms():
                 # once we found the matching atom, we compare attributes
                 if prod_atom.GetAtomMapNum() == index:
-                    if not compare_props(atom, prod_atom, products):
+                    if not compare_props(atom, prod_atom):
                         changed_atoms.add(atom)
                         changed_atom_map_num.add(atom.GetAtomMapNum())
 
@@ -108,7 +91,6 @@ def get_reaction_core_for_single_reactant(reaction_molecule: Mol, products: list
         if bond.GetBeginAtom().GetAtomMapNum() in changed_atom_map_num and bond.GetEndAtom().GetAtomMapNum() in changed_atom_map_num:
             changed_bonds.add((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))
 
-    # changed_atoms = reactant_atom_set.symmetric_difference(product_atom_set)
     return changed_atoms, changed_bonds
 
 
@@ -128,7 +110,7 @@ def find_matching_product_atom(reactant_atom: Atom, products: list[Mol]):
     return None
 
 
-def compare_props(reactant_atom: Atom, product_atom: Atom, product_list: list[Mol]):
+def compare_props(reactant_atom: Atom, product_atom: Atom):
     """
     Compares a fixed atom when it is in the reactant and when it is in the product
     Returns boolean (whether atoms are the same or different)
@@ -144,8 +126,6 @@ def compare_props(reactant_atom: Atom, product_atom: Atom, product_list: list[Mo
 
     reactant_atom_neighbors = {atom.GetAtomMapNum() for atom in reactant_atom.GetNeighbors()}
     product_atom_neighbors = {atom.GetAtomMapNum() for atom in product_atom.GetNeighbors()}
-    # print(reactant_atom_neighbors)
-    # print(product_atom_neighbors)
     for reactant_num in reactant_atom_neighbors:
         if reactant_num not in product_atom_neighbors:
             return False
