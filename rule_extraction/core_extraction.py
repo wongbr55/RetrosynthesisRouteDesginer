@@ -103,22 +103,6 @@ def get_reaction_core_for_single_reactant(reaction_molecule: Mol, products: List
     return changed_atoms, changed_bonds
 
 
-def find_matching_product_atom(reactant_atom: Atom, products: List[Mol]):
-    """
-    Finds the matching product atom for a given reaction atom reactant_atom
-    Returns the matching product atom
-    :param reactant_atom:
-    :param products:
-    :return:
-    """
-
-    for product in products:
-        for atom in product.GetAtoms():
-            if reactant_atom.GetAtomMapNum() == atom.GetAtomMapNum():
-                return atom
-    return None
-
-
 def compare_props(reactant_atom: Atom, product_atom: Atom):
     """
     Compares a fixed atom when it is in the reactant and when it is in the product
@@ -353,7 +337,7 @@ def get_leaving_group(reactant_mol: List[Mol], product_mol: List[Mol], reaction_
     # such as neighbors, degree, etc.
     for core_atom in reaction_core[0]:
         # find leaving group
-        product_atom = find_matching_product_atom(core_atom, product_mol)
+        product_atom = find_atom(core_atom.GetAtomMapNum(), product_mol)
         reactant_neighbors = {atom.GetAtomMapNum() for atom in core_atom.GetNeighbors()}
         product_neighbors = {atom.GetAtomMapNum() for atom in product_atom.GetNeighbors()}
         leaving_map_num = {map_num for map_num in reactant_neighbors if map_num not in product_neighbors and
