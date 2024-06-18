@@ -226,7 +226,7 @@ def extend_primary_bonds(atom: Atom, reaction_core: Tuple[Set[Atom], Set[Bond]],
         # check for secondary double or triple bonds
         for secondary_bond in new_atom.GetBonds():
             newest_atom = secondary_bond.GetOtherAtom(new_atom)
-            if secondary_bond.GetBondType() == BondType.DOUBLE or secondary_bond.GetBondType() == BondType.TRIPLE and \
+            if (secondary_bond.GetBondType() == BondType.DOUBLE or secondary_bond.GetBondType() == BondType.TRIPLE) and \
                     new_atom.GetAtomMapNum() not in atom_map_nums and newest_atom.GetAtomMapNum() not in atom_map_nums:
                 reaction_core[0].add(new_atom)
                 reaction_core[0].add(newest_atom)
@@ -365,6 +365,6 @@ def find_atom(atom_map_num: int, mols: List[Mol]) -> Atom:
     """
     for mol in mols:
         for atom in mol.GetAtoms():
-            if atom.GetAtomMapNum == atom_map_num:
+            if atom.GetAtomMapNum() == atom_map_num:
                 return atom
     return None
