@@ -7,20 +7,35 @@ from rdkit.Chem.rdchem import Mol, Atom, Bond, BondType
 from rdkit.Chem import Draw
 from rdkit.Chem.rdChemReactions import ChemicalReaction
 from typing import List, Set, Tuple
-
+from rxnmapper import RXNMapper
 
 ##################################################################################################
 # CORE EXTRACTION
 ##################################################################################################
 
 
-def get_reaction_core(reaction_smarts: str) -> Tuple[Tuple[Set[Atom], Set[tuple]], List[Mol], List[Mol]]:
+def get_reaction_core(reactants_smiles: List[str], products_smiles: List[str]) ->Tuple[Tuple[Set[Atom], Set[tuple]], List[Mol], List[Mol]]:
     """
     Runs the full reaction core
     Returns a tuple:
     first index is a tuple with new reaction core atoms and bonds
     second index is list of reactant in Mol objects
     third is list of products in Mol objects
+    """
+    reactants_smarts = '.'.join([smiles for smiles in reactants_smiles])
+    products_smarts = '.'.join([smiles for smiles in products_smiles])
+    reaction_smarts_without_atom_map = reactants_smarts + ">>" + products_smarts
+    
+    # add atom map nums to reaction smarts
+    rxn_mapper = RXNMapper()
+    reaction_smarts = rxn_mapper.get_attention_guided_atom_maps([reaction_smarts_without_atom_map])[0]["mapped_rxn"]  
+    return get_reaction_core_with_smarts(reaction_smarts)
+
+
+def get_reaction_core_with_smarts(reaction_smarts: str) -> Tuple[Tuple[Set[Atom], Set[tuple]], List[Mol], List[Mol]]:
+    """
+    Gets the reaction core given the reaction smarts
+    A helper function for get_reaction_core
     :return:
     """
 
@@ -163,7 +178,7 @@ def highlight_reaction_core(mol, changing_atoms, changing_bonds):
     bond_indices = [bond.GetIdx() for bond in mol.GetBonds() if
                     (bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()) in changing_bonds or (
                         bond.GetEndAtomIdx(), bond.GetBeginAtomIdx()) in changing_bonds]
-    return Draw.MolToImage(mol, highlightAtoms=atom_indices, highlightBonds=bond_indices)
+    return Draw.MolToFile(mol, "testing.png", highlightAtoms=atom_indices, highlightBonds=bond_indices)
 
 
 def print_atom_and_bond(reaction_core: Tuple[Set[Atom], Set[Bond]]) -> None:
