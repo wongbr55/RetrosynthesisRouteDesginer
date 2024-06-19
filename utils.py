@@ -5,7 +5,7 @@ File containing class information for all defined classes (currently only Reacti
 from rdkit.Chem.rdchem import Atom, Bond
 from typing import Set, Tuple
 
-class PartialMol():
+class ReactionCore():
     
     """
     An abstract class that represents "part" of a molecule, whether it be a reaction core or a fragment
@@ -88,18 +88,7 @@ class PartialMol():
                 self.bond_map_nums.add((index1, index2))
 
 
-class ReactionCore(PartialMol):
-    
-    """
-    Class that represents the reaction core of a reaction
-    Contains wrapper functinaility for most set operations
-    """
-    
-    def __init__(self) -> None:
-        super.__init__()
-
-
-class Fragment(PartialMol):
+class Fragment(ReactionCore):
     """
     Class that represents fragments of a substrate
     """
@@ -112,7 +101,6 @@ class Fragment(PartialMol):
         for bond in bonds:
             self.bonds.add(bond)
             self.bond_map_nums.add((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))
-    
     
     def get_atom_from_atom_map_num(self, atom_map_num: int) -> Atom:
         """
@@ -142,7 +130,7 @@ class Fragment(PartialMol):
             return None
 
         endpoint1, endpoint2 = edge[0], edge[1]
-        atom1, atom2 = self.get_atom_from_atom_map_num(endpoint1), self.get_atom_from_atom_map_num(endpoint2)
+        atom1 = self.get_atom_from_atom_map_num(endpoint1)
         fragment1_atom_set, fragment1_bond_set, fragment1_atom_map_num, atoms_to_exclude = set(), set(), set(), set()
         atoms_to_exclude.add(endpoint2)
         
