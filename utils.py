@@ -23,6 +23,10 @@ class ReactionCore():
         self.atom_map_nums = set()
         self.bond_map_nums = set()
     
+    def __str__(self) -> None:
+        print("Atoms: " + str(self.atom_map_nums))
+        print("Bonds: " + str(self.bond_map_nums))
+    
     def add_atom_to_core(self, atom: Atom) -> None:
         """
         Adds atom to core
@@ -52,7 +56,7 @@ class ReactionCore():
         index1, index2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
         return (index1, index2) in self.bond_map_nums or (index2, index1) in self.bond_map_nums
 
-    def add_set_atoms(self, atom_set: Set[Atom]) -> None:
+    def add_atoms(self, atom_set: Set[Atom]) -> None:
         """
         Adds atom_set to atoms and mutates atom_map_nums accoridingly
         """
@@ -61,7 +65,7 @@ class ReactionCore():
                 self.atoms.add(atom)
                 self.atom_map_nums.add(atom.GetAtomMapNum())
     
-    def set_bonds(self, bond_set: Set[Bond]) -> None:
+    def add_bonds(self, bond_set: Set[Bond]) -> None:
         """
         Adds bond_set to bonds and mutates bond_map_nums accoridingly
         """
