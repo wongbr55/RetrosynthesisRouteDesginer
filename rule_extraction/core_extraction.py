@@ -9,16 +9,18 @@ from rdkit.Chem.rdChemReactions import ChemicalReaction
 from typing import List, Set, Tuple
 from rxnmapper import RXNMapper
 
+from utils import ReactionCore
+
 ##################################################################################################
 # CORE EXTRACTION
 ##################################################################################################
 
 
-def get_reaction_core(reactants_smiles: List[str], products_smiles: List[str]) ->Tuple[Tuple[Set[Atom], Set[tuple]], List[Mol], List[Mol]]:
+def get_reaction_core(reactants_smiles: List[str], products_smiles: List[str]) ->Tuple[ReactionCore, List[Mol], List[Mol]]:
     """
     Runs the full reaction core
     Returns a tuple:
-    first index is a tuple with new reaction core atoms and bonds
+    first index is a ReactionCore object
     second index is list of reactant in Mol objects
     third is list of products in Mol objects
     """
@@ -32,11 +34,10 @@ def get_reaction_core(reactants_smiles: List[str], products_smiles: List[str]) -
     return get_reaction_core_with_smarts(reaction_smarts)
 
 
-def get_reaction_core_with_smarts(reaction_smarts: str) -> Tuple[Tuple[Set[Atom], Set[tuple]], List[Mol], List[Mol]]:
+def get_reaction_core_with_smarts(reaction_smarts: str) -> Tuple[ReactionCore, List[Mol], List[Mol]]:
     """
     Gets the reaction core given the reaction smarts
-    A helper function for get_reaction_core
-    :return:
+    Essentially just creates ChemicalReaction object and passes to get_reaction_core_helper
     """
 
     reaction = Chem.rdChemReactions.ReactionFromSmarts(reaction_smarts)
@@ -50,11 +51,11 @@ def get_reaction_core_with_smarts(reaction_smarts: str) -> Tuple[Tuple[Set[Atom]
         product_mol.append(mol)
 
     # get core
-    changed_props = get_reaction_core_helper(reactant_mol, product_mol)
-    return changed_props, reactant_mol, product_mol
+    core = get_reaction_core_helper(reactant_mol, product_mol)
+    return core, reactant_mol, product_mol
 
 
-def get_reaction_core_helper(reactant_molecule_list: List[Mol], product_mols: List[Mol]) -> Tuple[Set[Atom], Set[Bond]]:
+def get_reaction_core_helper(reactant_molecule_list: List[Mol], product_mols: List[Mol]) -> ReactionCore:
     """
     Identifies the reaction core of the reactants
     Assume RXN property for reactant and product are set
@@ -83,8 +84,12 @@ def get_reaction_core_helper(reactant_molecule_list: List[Mol], product_mols: Li
             if not any(bond.Match(other_bond) for other_bond in changed_bonds):
                 bonds_no_duplicates.add(bond)
         changed_bonds = changed_bonds.union(bonds_no_duplicates)
+    
+    core = ReactionCore()
+    core.add_atoms(changed_atoms)
+    core.add_bonds(changed_bonds)
 
-    return changed_atoms, changed_bonds
+    return core
 
 
 def get_reaction_core_for_single_reactant(reaction_molecule: Mol, products: List[Mol]) -> Tuple[Set[Atom], Set[Bond]]:
