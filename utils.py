@@ -10,8 +10,8 @@ class ReactionCore():
     """
     An abstract class that represents "part" of a molecule, whether it be a reaction core or a fragment
     """
-    atoms: Set[Atoms]
-    bonds: Set[Bonds]
+    atoms: Set[Atom]
+    bonds: Set[Bond]
     atom_map_nums: Set[int]
     bond_map_nums: Set[Tuple[int]]
     
@@ -22,9 +22,8 @@ class ReactionCore():
         self.atom_map_nums = set()
         self.bond_map_nums = set()
         
-    def __str__(self) -> None:
-        print("Atoms: " + str(self.atom_map_nums))
-        print("Bonds: " + str(self.bond_map_nums))
+    def __str__(self) -> str:
+        return "Atoms: " + str(self.atom_map_nums) + '\n' + "Bonds: " + str(self.bond_map_nums)
         
     def add_atom(self, atom: Atom) -> None:
         """
@@ -94,7 +93,7 @@ class Fragment(ReactionCore):
     """
     
     def __init__(self, atoms: Set[Atom], bonds: Set[Bond]) -> None:
-        super.__init__()
+        super().__init__()
         for atom in atoms:
             self.atoms.add(atom)
             self.atom_map_nums.add(atom.GetAtomMapNum())
@@ -121,12 +120,45 @@ class Fragment(ReactionCore):
                 return bond
         return None
     
-    def fragment(self, edge: Tuple[int]) -> Fragment:
+    
+    def fragment_with_multiple_edges(self, edges: Set[Tuple[int]]):
+        """
+        Fragments a molecule by cutting off all of the edges in edges
+        """
+        
+        # remove edges
+        for edge in edges:
+            self.bonds.remove(self.get_bond_from_atom_map_num(edge[0], edge[1]))
+            if edge in self.bond_map_nums:
+                self.bond_map_nums.remove(edge)
+            else:
+                self.bond_map_nums.remove((edge[0], edge[1]))
+        
+        # get the remaining fragments
+        fragments = set()
+        atoms_seen_so_far_map_num = set()
+        for atom in self.atoms:
+            if atom.GetAtomMapNum() not in atoms_seen_so_far_map_num:
+                atoms_seen_so_far_map_num.add(atom.GetAtomMapNum())
+                new_fragment_atoms = set()
+                new_fragment_atoms_map_num = set()
+                new_fragment_bonds = set()
+                
+                self._add_atoms_from_curr_atom(atom, new_fragment_atoms, new_fragment_bonds, set(), new_fragment_atoms_map_num)
+                atoms_seen_so_far_map_num = atoms_seen_so_far_map_num.union(new_fragment_atoms_map_num)
+                new_fragment = Fragment(new_fragment_atoms, new_fragment_bonds)
+                fragments.add(new_fragment)
+        
+        return fragments
+    
+    def fragment(self, edge: Tuple[int]):
         """
         From the given edge, create a new fragment object such that the current fragment object is broken
         At "edge" and the new and current fragment are two "new" fragments
+        
+        Returns a new Fragment object
         """
-        if not self.check_bond_map_num(edge):
+        if not self.check_bond_map_num(edge[0], edge[1]):
             return None
 
         endpoint1, endpoint2 = edge[0], edge[1]
@@ -164,13 +196,14 @@ class Fragment(ReactionCore):
         for bond in curr_atom.GetBonds():
             other_atom = bond.GetOtherAtom(curr_atom)
             other_atom_map_num = other_atom.GetAtomMapNum()
-            if other_atom_map_num not in atoms_so_far_map_num and other_atom_map_num not in atoms_to_exclude:
+            if other_atom_map_num not in atoms_so_far_map_num and other_atom_map_num not in atoms_to_exclude \
+                and self.check_bond_map_num(other_atom_map_num, curr_atom.GetAtomMapNum()):
                 atoms_so_far.add(other_atom)
                 atoms_so_far_map_num.add(other_atom_map_num)
                 bonds_so_far.add(bond)
                 self._add_atoms_from_curr_atom(other_atom, atoms_so_far, bonds_so_far, atoms_to_exclude, atoms_so_far_map_num)
         
-    def _get_bonds_atom_set(self, atoms: Set[int]) -> Set[bond]:
+    def _get_bonds_atom_set(self, atoms: Set[int]) -> Set[Bond]:
         """
         Returns a set of Bond objects that only contain the atoms in atom
         Note atoms is a set of atom map numbers
@@ -179,7 +212,7 @@ class Fragment(ReactionCore):
         bonds_so_far = set()
         for bond in self.bonds:
             endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
-            if endpoint1 in self.atom_map_nums and endpoint2 in self.atom_map_nums:
+            if endpoint1 in atoms and endpoint2 in atoms:
                 bonds_so_far.add(bond)
         
         return bonds_so_far
