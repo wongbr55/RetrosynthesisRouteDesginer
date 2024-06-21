@@ -205,20 +205,16 @@ def print_atom_and_bond(reaction_core: Tuple[Set[Atom], Set[Bond]]) -> None:
 ##################################################################################################
 
 
-def extend_reaction_core(reactant_mol: List[Mol], product_mol: List[Mol], reaction_core: Tuple[Set[Atom], Set[Bond]]) -> None:
+def extend_reaction_core(reactant_mol: List[Mol], product_mol: List[Mol], reaction_core: ReactionCore) -> str:
     """
     Takes the current core in terms of atoms and bonds and extends the reaction core
     Heurstics found in section 2.2 of Route Designer paper
-    Returns the new reaction core
-    :param reactant_mol:
-    :param product_mol:
-    :param reaction_core:
-    :return:
+    Returns the reaction SMARTS for the reaction core
     """
 
     # create copy of reaction_core[0] to iterate through
-    copy_core = {atom for atom in reaction_core[0]}
-    atom_map_nums = {atom.GetAtomMapNum() for atom in reaction_core[0]}
+    copy_core = {atom for atom in reaction_core.atoms}
+    atom_map_nums = {atom_map_num for atom_map_num in reaction_core.atom_map_nums}
     # extend core
     for atom in copy_core:
         # we first employ some special heursitics for primary bonds
@@ -227,9 +223,14 @@ def extend_reaction_core(reactant_mol: List[Mol], product_mol: List[Mol], reacti
         add_atoms_to_core(atom, reaction_core, atom_map_nums)
     # get leaving groups and add them to the reaction core
     get_leaving_group(reactant_mol, product_mol, reaction_core, atom_map_nums)
+    
+    # make identical reaction core for products and get SMARTS
+    product_core = ReactionCore()
+    duplicate_reaction_core_to_product_core(reaction_core, product_core, product_mol)
+    return reaction_core.get_smarts() + ">>" + product_core.get_smarts()
 
 
-def extend_primary_bonds(atom: Atom, reaction_core: Tuple[Set[Atom], Set[Bond]], atom_map_nums: Set[int]) -> None:
+def extend_primary_bonds(atom: Atom, reaction_core: ReactionCore, atom_map_nums: Set[int]) -> None:
     """
     Adds new atoms to reaction core
     Assume that atom is a member of the reaction core
@@ -248,10 +249,12 @@ def extend_primary_bonds(atom: Atom, reaction_core: Tuple[Set[Atom], Set[Bond]],
             newest_atom = secondary_bond.GetOtherAtom(new_atom)
             if (secondary_bond.GetBondType() == BondType.DOUBLE or secondary_bond.GetBondType() == BondType.TRIPLE) and \
                     new_atom.GetAtomMapNum() not in atom_map_nums and newest_atom.GetAtomMapNum() not in atom_map_nums:
-                reaction_core[0].add(new_atom)
-                reaction_core[0].add(newest_atom)
-                reaction_core[1].add(bond)
-                reaction_core[1].add(secondary_bond)
+                reaction_core.add_atom(new_atom)
+                reaction_core.add_atom(newest_atom)
+                # print("Added " + str((atom.GetAtomMapNum(), new_atom.GetAtomMapNum())) + " through extension")
+                # print("Added " + str((new_atom.GetAtomMapNum(), newest_atom.GetAtomMapNum())) + " through extension")
+                reaction_core.add_bond(bond)
+                reaction_core.add_bond(secondary_bond)
                 atom_map_nums.add(new_atom.GetAtomMapNum())
                 atom_map_nums.add(new_atom.GetAtomMapNum())
 
@@ -260,7 +263,7 @@ def extend_primary_bonds(atom: Atom, reaction_core: Tuple[Set[Atom], Set[Bond]],
             get_aromatic_ring(atom, reaction_core, atom_map_nums)
 
 
-def get_aromatic_ring(atom: Atom, reaction_core: Tuple[Set[Atom], Set[Bond]], atom_map_nums: Set[int]) -> None:
+def get_aromatic_ring(atom: Atom, reaction_core: ReactionCore, atom_map_nums: Set[int]) -> None:
     """
     Gets all the atoms and bonds in an aromatic ring
     Mutates the
@@ -284,17 +287,17 @@ def get_aromatic_ring(atom: Atom, reaction_core: Tuple[Set[Atom], Set[Bond]], at
         bond = ownning_mol.GetBondWithIdx(bond_idx)
 
         if bond.GetBeginAtom().GetAtomMapNum() not in atom_map_nums and bond.GetEndAtom().GetAtomMapNum() not in atom_map_nums:
-            reaction_core[1].add(bond)
-            reaction_core[0].add(bond.GetBeginAtom())
-            reaction_core[0].add(bond.GetEndAtom())
+            reaction_core.add_bond(bond)
+            reaction_core.add_atom(bond.GetBeginAtom())
+            reaction_core.add_atom(bond.GetEndAtom())
             atom_map_nums.add(bond.GetBeginAtom().GetAtomMapNum())
             atom_map_nums.add(bond.GetEndAtom().GetAtomMapNum())
 
 
-def add_atoms_to_core(atom: Atom, reaction_core: Tuple[Set[Atom], Set[Bond]], atom_map_nums: Set[int]) -> None:
+def add_atoms_to_core(atom: Atom, reaction_core: ReactionCore, atom_map_nums: Set[int]) -> None:
     """
     Adds new atoms to the reaction core
-    Essentially employs a BFS search on molecule starting at atom
+    Essentially employs a DFS search on molecule starting at atom
     Mutates reaction core for extension
     :param atom:
     :param reaction_core:
@@ -305,44 +308,56 @@ def add_atoms_to_core(atom: Atom, reaction_core: Tuple[Set[Atom], Set[Bond]], at
     atom_seen_so_far = set()
     while len(queue) != 0:
         curr_atom = queue.pop()
+        print("Checking atom " + str(curr_atom.GetAtomMapNum()))
         for bond in curr_atom.GetBonds():
             new_atom = bond.GetOtherAtom(curr_atom)
-            if not check_external_nonaromatic_bond(bond) and new_atom not in reaction_core[0] and \
-                    bond not in reaction_core[1] and new_atom.GetAtomMapNum() not in atom_seen_so_far and \
+            print("Checking bond with " + str(new_atom.GetAtomMapNum()))
+            # if never seen before add to core
+            if not check_external_nonaromatic_bond(bond, new_atom) and new_atom.GetAtomMapNum() not in atom_seen_so_far and \
                     new_atom.GetAtomMapNum() not in atom_map_nums:
-                reaction_core[0].add(new_atom)
-                reaction_core[1].add(bond)
+                reaction_core.add_atom(new_atom)
+                reaction_core.add_bond(bond)
                 atom_map_nums.add(new_atom.GetAtomMapNum())
+                print("Appending " + str(new_atom.GetAtomMapNum()))
                 queue.append(new_atom)
-            elif check_external_nonaromatic_bond(bond):
-                atom_seen_so_far.add(curr_atom.GetAtomMapNum())
+            # if added previously by primary core extension still add to queue
+            elif not check_external_nonaromatic_bond(bond, new_atom) and new_atom.GetAtomMapNum() in atom_map_nums \
+                        and new_atom.GetAtomMapNum() not in atom_seen_so_far:
+                queue.append(new_atom)
+                atom_seen_so_far.add(new_atom)
+            # otherwise do not add
+            elif check_external_nonaromatic_bond(bond, new_atom):
+                atom_seen_so_far.add(new_atom.GetAtomMapNum())
+                
         atom_seen_so_far.add(curr_atom.GetAtomMapNum())
 
 
-def check_external_nonaromatic_bond(bond: Bond) -> bool:
+def check_external_nonaromatic_bond(bond: Bond, new_atom: Atom) -> bool:
     """
     Checks if current bond is an external nonaromatic carbon-carbon bond
     Returns True of False upon completion
     :param bond:
     :return: boolean
     """
-    atom1 = bond.GetBeginAtom()
-    atom2 = bond.GetEndAtom()
+    
+    # check if the atom is aromatic
+    if new_atom.GetIsAromatic():
+        # print("Bond between " + str(atom1.GetAtomMapNum()) + " and " + str(atom2.GetAtomMapNum()) + " fails on aromatic")
+        print("Atom " + str(new_atom.GetAtomMapNum()) + " fails on aromatic")
+        return True
+    # check if it is in a ring
+    if new_atom.IsInRing():
+        print("Atom " + str(new_atom.GetAtomMapNum()) + " fails on ring")
+        return True
+    # TODO check if it is external
+    if new_atom.GetDegree() == 1:
+        return True
+    
+    # print("Bond between " + str(atom1.GetAtomMapNum()) + " and " + str(atom2.GetAtomMapNum()) + " passes")
+    return False
 
-    # check to see if atoms are carbon
-    if atom1.GetAtomicNum() != 6 or atom2.GetAtomicNum() != 6:
-        return False
-    # check if the bond is aromatic
-    if bond.GetIsAromatic():
-        return False
-    # check if the bond is external (not part of a ring)
-    if atom1.IsInRing() or atom2.IsInRing():
-        return False
-    # otherwise we are good
-    return True
 
-
-def get_leaving_group(reactant_mol: List[Mol], product_mol: List[Mol], reaction_core: Tuple[Set[Atom], Set[Bond]],
+def get_leaving_group(reactant_mol: List[Mol], product_mol: List[Mol], reaction_core: ReactionCore,
                       atom_map_nums: Set[int]) -> None:
     """
     Gets leaving group Atoms and Bonds and mutates reaction_core to add them
@@ -355,7 +370,7 @@ def get_leaving_group(reactant_mol: List[Mol], product_mol: List[Mol], reaction_
     # we check for bonds being broken in reaction core
     # the only place leaving groups can occur is from bonds in reaction core as their properties change
     # such as neighbors, degree, etc.
-    for core_atom in reaction_core[0]:
+    for core_atom in reaction_core.atoms:
         # find leaving group
         product_atom = find_atom(core_atom.GetAtomMapNum(), product_mol)
         reactant_neighbors = {atom.GetAtomMapNum() for atom in core_atom.GetNeighbors()}
@@ -366,14 +381,30 @@ def get_leaving_group(reactant_mol: List[Mol], product_mol: List[Mol], reaction_
         # add atoms
         leaving_atoms = {find_atom(num, reactant_mol) for num in leaving_map_num}
         for atom in leaving_atoms:
-            reaction_core[0].add(atom)
+            reaction_core.add_atom(atom)
         atom_map_nums = atom_map_nums.union(leaving_map_num)
         # add bonds
         for atom in leaving_atoms:
-            for neighbor in atom.GetNeighbors():
+            for bond in atom.GetBonds():
+                neighbor = bond.GetOtherAtom(atom)
                 if neighbor.GetAtomMapNum() in leaving_map_num and neighbor.GetAtomMapNum() not in atom_map_nums:
-                    reaction_core[0].add(neighbor)
+                    reaction_core.add_atom(neighbor)
+                    reaction_core.add_bond(bond)
                     atom_map_nums.add(neighbor.GetAtomMapNum())
+
+
+def duplicate_reaction_core_to_product_core(reactant_core: ReactionCore, product_core: ReactionCore, products: List[Mol]) -> None:
+    """
+    Takes the reactant core and duplicates it to the product core with the proper bonds and such in the product
+    """
+    for atom in reactant_core.atoms:
+        product_atom = find_atom(atom.GetAtomMapNum(), products)
+        product_core.add_atom(product_atom)
+    
+    for bond in reactant_core.bonds:
+        product_bond = find_bond(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum(), products)
+        if product_core.check_atom(product_bond.GetBeginAtom()) and product_core.check_atom(product_bond.GetEndAtom()):
+            product_core.add_bond(product_bond)
 
 
 def find_atom(atom_map_num: int, mols: List[Mol]) -> Atom:
@@ -387,4 +418,17 @@ def find_atom(atom_map_num: int, mols: List[Mol]) -> Atom:
         for atom in mol.GetAtoms():
             if atom.GetAtomMapNum() == atom_map_num:
                 return atom
+    return None
+
+
+def find_bond(index1: int, index2: int, mols: List[Mol]) -> Bond:
+    """
+    Finds Bond object that has same bond map numbers as index1 and index2
+    """
+    
+    for mol in mols:
+        for bond in mol.GetBonds():
+            possible1, possible2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
+            if (index1 == possible1 and index2 == possible2) or (index1 == possible2 and index2 == possible1):
+                return bond
     return None

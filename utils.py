@@ -1,14 +1,14 @@
 """
 File containing class information for all defined classes (currently only ReactionCore)
 """
-
-from rdkit.Chem.rdchem import Atom, Bond
+from rdkit import Chem
+from rdkit.Chem.rdchem import Atom, Bond, Mol, EditableMol
 from typing import Set, Tuple
 
 class ReactionCore():
     
     """
-    An abstract class that represents "part" of a molecule, whether it be a reaction core or a fragment
+    A class that represents the reaction core of a reaction
     """
     atoms: Set[Atom]
     bonds: Set[Bond]
@@ -38,8 +38,8 @@ class ReactionCore():
         Adds bond to core
         Assumes that bond is not already in current core
         """
-        self.bonds.add(Bond)
-        self.bond_map_nums.add(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum())
+        self.bonds.add(bond)
+        self.bond_map_nums.add((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))
     
     def check_atom(self, atom: Atom) -> bool:
         """
@@ -79,12 +79,38 @@ class ReactionCore():
         """
         Adds bond_set to bonds and mutates bond_map_nums accoridingly
         """
-        self.bonds = bond_set
         for bond in bond_set:
             index1, index2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
             if not (index1, index2) in self.bond_map_nums and not (index2, index1) in self.bond_map_nums:
                 self.bonds.add(bond)
                 self.bond_map_nums.add((index1, index2))
+         
+    def get_mol(self) -> Mol:
+        """
+        Returns a new Mol object for current Reaction core with proper bonds and such
+        Mol object may contain multiple molecules
+        """
+        new_mol = EditableMol(Chem.RWMol())
+        transfers = {}
+        counter = 0
+        for atom in self.atoms:
+            transfers[atom.GetAtomMapNum()] = counter
+            new_mol.AddAtom(Atom(atom.GetAtomicNum()))
+            counter += 1
+        
+        for bond in self.bonds:
+            atom_num1 = bond.GetBeginAtom().GetAtomMapNum()
+            atom_num2 = bond.GetEndAtom().GetAtomMapNum()
+            new_num1, new_num2 = transfers[atom_num1], transfers[atom_num2]
+            new_mol.AddBond(new_num1, new_num2, bond.GetBondType())
+        
+        return new_mol.GetMol()
+    
+    def get_smarts(self) -> str:
+        """
+        Returns the SMARTS for the current reaction core
+        """
+        return Chem.MolToSmarts(self.get_mol())
 
 
 class Fragment(ReactionCore):
