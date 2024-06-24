@@ -4,7 +4,8 @@ File containing class information for all defined classes (currently only Reacti
 from rdkit import Chem
 from rdkit.Chem.rdchem import Atom, Bond, Mol, EditableMol
 from typing import Set, Tuple, List
-from rules import Rule
+from rules import Rule, ModifyBond, AddBond, RemoveBond
+import utils
 
 class ReactionCore():
     
@@ -117,7 +118,7 @@ class ReactionCore():
 class Fragment(ReactionCore):
     """
     Class that represents fragments of a product template being broken apart
-    rules is a list of Rule objects that describe how to mutate fragment
+    rules is a list of Rule objects that describe how to mutate fragment to get back to reactant
     """
     
     rules: List[Rule]
@@ -151,6 +152,30 @@ class Fragment(ReactionCore):
                 return bond
         return None
     
+    def remove_atom(self, atom: Atom) -> None:
+        """
+        Removes atom from self.atoms and self.atom_map_nums
+        """
+        self.atoms.remove(atom)
+        self.atom_map_nums.remove(atom.GetAtomMapNum())
+    
+    def remove_bond(self, bond: Bond) -> None:
+        """
+        Removes bond from self.bonds and self.bond_map_nums
+        """
+        endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
+        self.bonds.remove(bond)
+        if (endpoint1, endpoint2) in self.bond_map_nums:
+            self.bond_map_nums.remove((endpoint1, endpoint2))
+        else:
+            self.bond_map_nums.remove((endpoint2, endpoint1))
+        
+        # check to see if endpoints are still connected to anything, otherwise start to remove atoms
+        all_endpoints = {end[0] for end in self.atom_map_nums}.union({end[2] for end in self.atom_map_nums})
+        if endpoint1 not in all_endpoints:
+            self.remove_atom(self.get_atom_from_atom_map_num(endpoint1))
+        if endpoint2 not in all_endpoints:
+            self.remove_atom(self.get_atom_from_atom_map_num(endpoint2))
     
     def fragment_with_multiple_edges(self, edges: Set[Tuple[int]]):
         """
@@ -219,16 +244,31 @@ class Fragment(ReactionCore):
         self.bond_map_nums = {(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()) for bond in fragment1_bond_set}
         return Fragment(fragment2_atom_set, fragment2_bond_set)
     
-    
     def get_rules(self, reactant_template: Set[Mol]) -> None:
         """
         Gets the list of rules to transform framgent back to original reactant
         """
-        
         reactant = self._find_reactant_that_matches(reactant_template)
         
+        # for each template fragment, identify rules that need to be created
         for bond in reactant.GetBonds():
-            
+            # if there is a bond in the reactants that is not in the fragment, we create an AddBond rule
+            if not self.check_bond(bond):
+                self.rules.append(AddBond(bond))
+            # otherwise if it is in the fragment but is not matching, we add a ModifyBond rule
+            else:
+                endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom.GetAtomMapNum()
+                curr_bond = self.get_bond_from_atom_map_num(endpoint1, endpoint2)
+                if not curr_bond.Match(bond):
+                    self.rules.append(ModifyBond(bond))
+        
+        # now we check for bonds that are in fragment that are not in reactant, if so add a RemoveBond rule
+        for bond in self.bonds:
+            endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom.GetAtomMapNum()
+            if utils.find_bond(endpoint1, endpoint2, [reactant]) is None:
+                self.rules.append(RemoveBond(bond))
+                
+                        
         
     
     def _find_reactant_that_matches(self, reactant_template: Set[Mol]) -> Mol:
