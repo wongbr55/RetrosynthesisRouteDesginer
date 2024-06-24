@@ -9,7 +9,12 @@ from typing import Set, Tuple
 
 from partial_molecule import ReactionCore, Fragment
 
-def get_fragments(substrate: Mol, core: ReactionCore, reactant_template: Set[Mol], product_template: Set[Mol]):
+
+##################################################################################################
+# Fragment retrieval
+##################################################################################################
+
+def get_template_fragments(reactant_template: Set[Mol], product_template: Set[Mol]):
     """
     Given a reaction core of a given molecule "substrate", finds the corrosponding reactants that made that
     Substrate
@@ -23,7 +28,11 @@ def get_fragments(substrate: Mol, core: ReactionCore, reactant_template: Set[Mol
                     fragment_map_nums.add((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))     
 
     # with complete set of "edges" for the fragments, we break up the molecule
-    return get_fragments(substrate, fragment_map_nums)
+    fragments_so_far = set()
+    for product in product_template:
+        fragments_so_far = fragments_so_far.union(get_template_fragments_for_one_mol(product, fragment_map_nums))
+    
+    return fragments_so_far
     
 
 def check_if_bond_in_mols(bond: Bond, molecules: Set[Mol]) -> bool:
@@ -41,7 +50,7 @@ def check_if_bond_in_mols(bond: Bond, molecules: Set[Mol]) -> bool:
     return False
     
 
-def get_fragments(substrate: Mol, fragment_edges: Set[Tuple[int]]):
+def get_template_fragments_for_one_mol(substrate: Mol, fragment_edges: Set[Tuple[int]]):
     """
     Gets all of the fragments from the substrate
     """
@@ -65,3 +74,20 @@ def get_fragments(substrate: Mol, fragment_edges: Set[Tuple[int]]):
     
     return fragments     
 
+
+##################################################################################################
+# Rule retrieval
+##################################################################################################
+
+
+def get_rules(template_fragments: Set[Fragment], reactant_template: Set[Mol]):
+    """
+    Gets the rule extraction for each fragment
+    NOTE each fragment here is the set of template fragments
+    
+    """
+    
+    # for each template fragment, identify rules that need to be created
+    for fragment in template_fragments:
+        for bond in fragment.bonds:
+            
