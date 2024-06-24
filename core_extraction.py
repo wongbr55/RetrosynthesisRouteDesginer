@@ -308,52 +308,43 @@ def add_atoms_to_core(atom: Atom, reaction_core: ReactionCore, atom_map_nums: Se
     atom_seen_so_far = set()
     while len(queue) != 0:
         curr_atom = queue.pop()
-        print("Checking atom " + str(curr_atom.GetAtomMapNum()))
         for bond in curr_atom.GetBonds():
             new_atom = bond.GetOtherAtom(curr_atom)
-            print("Checking bond with " + str(new_atom.GetAtomMapNum()))
             # if never seen before add to core
-            if not check_external_nonaromatic_bond(bond, new_atom) and new_atom.GetAtomMapNum() not in atom_seen_so_far and \
+            if not check_external_nonaromatic_bond(new_atom) and new_atom.GetAtomMapNum() not in atom_seen_so_far and \
                     new_atom.GetAtomMapNum() not in atom_map_nums:
                 reaction_core.add_atom(new_atom)
                 reaction_core.add_bond(bond)
                 atom_map_nums.add(new_atom.GetAtomMapNum())
-                print("Appending " + str(new_atom.GetAtomMapNum()))
                 queue.append(new_atom)
             # if added previously by primary core extension still add to queue
-            elif not check_external_nonaromatic_bond(bond, new_atom) and new_atom.GetAtomMapNum() in atom_map_nums \
+            elif not check_external_nonaromatic_bond(new_atom) and new_atom.GetAtomMapNum() in atom_map_nums \
                         and new_atom.GetAtomMapNum() not in atom_seen_so_far:
                 queue.append(new_atom)
                 atom_seen_so_far.add(new_atom)
             # otherwise do not add
-            elif check_external_nonaromatic_bond(bond, new_atom):
+            elif check_external_nonaromatic_bond(new_atom):
                 atom_seen_so_far.add(new_atom.GetAtomMapNum())
                 
         atom_seen_so_far.add(curr_atom.GetAtomMapNum())
 
 
-def check_external_nonaromatic_bond(bond: Bond, new_atom: Atom) -> bool:
+def check_external_nonaromatic_bond(new_atom: Atom) -> bool:
     """
     Checks if current bond is an external nonaromatic carbon-carbon bond
     Returns True of False upon completion
-    :param bond:
-    :return: boolean
     """
     
     # check if the atom is aromatic
     if new_atom.GetIsAromatic():
-        # print("Bond between " + str(atom1.GetAtomMapNum()) + " and " + str(atom2.GetAtomMapNum()) + " fails on aromatic")
-        print("Atom " + str(new_atom.GetAtomMapNum()) + " fails on aromatic")
         return True
     # check if it is in a ring
     if new_atom.IsInRing():
-        print("Atom " + str(new_atom.GetAtomMapNum()) + " fails on ring")
         return True
     # TODO check if it is external
     if new_atom.GetDegree() == 1:
         return True
-    
-    # print("Bond between " + str(atom1.GetAtomMapNum()) + " and " + str(atom2.GetAtomMapNum()) + " passes")
+
     return False
 
 
