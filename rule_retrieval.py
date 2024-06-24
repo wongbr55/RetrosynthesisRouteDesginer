@@ -7,7 +7,7 @@ from rdkit.Chem.rdchem import Mol, Atom, Bond, BondType
 from rdkit.Chem.rdChemReactions import ChemicalReaction
 from typing import Set, Tuple
 
-from utils import ReactionCore, Fragment
+from partial_molecule import ReactionCore, Fragment
 
 def get_fragments(substrate: Mol, core: ReactionCore, reactant_template: Set[Mol], product_template: Set[Mol]):
     """
@@ -16,11 +16,11 @@ def get_fragments(substrate: Mol, core: ReactionCore, reactant_template: Set[Mol
     """
     fragment_map_nums = set()
     # find the atoms where bonds have broken
-    for atom in core.atoms:
-        for bond in atom.GetBonds():
-            print("Bond to check: " + str((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum())))
-            if not check_if_bond_in_mols(bond, product_template):
-                fragment_map_nums.add((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))     
+    for mol in reactant_template:
+        for atom in mol.GetAtoms():
+            for bond in atom.GetBonds():
+                if not check_if_bond_in_mols(bond, product_template):
+                    fragment_map_nums.add((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))     
 
     # with complete set of "edges" for the fragments, we break up the molecule
     return get_fragments(substrate, fragment_map_nums)
@@ -49,8 +49,6 @@ def get_fragments(substrate: Mol, fragment_edges: Set[Tuple[int]]):
     fragments = set()
     curr_fragment = Fragment(substrate.GetAtoms(), substrate.GetBonds())
     fragments.add(curr_fragment)
-    
-    print(fragment_edges)
     
     fragments = curr_fragment.fragment_with_multiple_edges(fragment_edges)
     
