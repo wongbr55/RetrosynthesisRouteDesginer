@@ -90,9 +90,9 @@ class AddBond(Rule):
     
     def apply_rule(self, fragment: Fragment) -> None:
         
-        # TODO replace this with code that will actually get the proper indicies that relate to this bond
-        begin_atom = self.bond_to_add.GetBeginAtom()
-        end_atom = self.bond_to_add.GetEndAtom()
+        # TODO replace this with code that will actually get the proper atoms that relate to this bond
+        begin_atom = ...
+        end_atom = ...
         
         if not fragment.check_atom(begin_atom):
             fragment.add_atom(begin_atom)
@@ -100,3 +100,21 @@ class AddBond(Rule):
             fragment.add_atom(end_atom)
         
         fragment.add_bond(self.bond_to_add)
+        
+
+class RemoveBond(Rule):
+    """
+    Rule for fragment that will remove a bond to a given fragment
+    
+    bond_to_remove is the bond to remove
+    """
+    
+    bond_to_remove: Bond
+    
+    def __init__(self, bond_to_remove: Bond) -> None:
+        super().__init__()
+        self.bond_to_remove = bond_to_remove
+        
+    def apply_rule(self, fragment: Fragment) -> None:
+        bond_in_fragment = self.get_bond_from_fragment(self.bond_to_remove, fragment)
+        fragment.remove_bond(bond_in_fragment)
