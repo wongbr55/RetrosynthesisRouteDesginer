@@ -9,7 +9,7 @@ from rdkit.Chem.rdChemReactions import ChemicalReaction
 from typing import List, Set, Tuple
 from rxnmapper import RXNMapper
 
-from partial_molecule import ReactionCore
+from classespartial_molecule import ReactionCore
 
 ##################################################################################################
 # CORE EXTRACTION

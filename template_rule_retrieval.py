@@ -7,7 +7,7 @@ from rdkit.Chem.rdchem import Mol, Atom, Bond, BondType
 from rdkit.Chem.rdChemReactions import ChemicalReaction
 from typing import Set, Tuple
 
-from partial_molecule import ReactionCore, Fragment
+from classes.partial_molecule import ReactionCore, Fragment
 
 
 ##################################################################################################
