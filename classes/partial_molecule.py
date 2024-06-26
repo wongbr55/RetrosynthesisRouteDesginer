@@ -3,7 +3,7 @@ File containing class information for all defined classes (currently only Reacti
 """
 from rdkit import Chem
 from rdkit.Chem.rdchem import Atom, Bond, Mol, EditableMol
-from typing import Set, Tuple, List
+from typing import Set, Tuple, List, Dict
 from rules import Rule, ModifyBond, AddBond, RemoveBond
 import utils
 
@@ -184,12 +184,8 @@ class Fragment(ReactionCore):
         
         # remove edges
         for edge in edges:
-            self.bonds.remove(self.get_bond_from_atom_map_num(edge[0], edge[1]))
-            if edge in self.bond_map_nums:
-                self.bond_map_nums.remove(edge)
-            else:
-                self.bond_map_nums.remove((edge[0], edge[1]))
-        
+            self.remove_bond(self.get_bond_from_atom_map_num(edge[0], edge[1]))
+            
         # get the remaining fragments
         fragments = set()
         atoms_seen_so_far_map_num = set()
@@ -244,32 +240,99 @@ class Fragment(ReactionCore):
         self.bond_map_nums = {(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()) for bond in fragment1_bond_set}
         return Fragment(fragment2_atom_set, fragment2_bond_set)
     
-    def get_rules(self, reactant_template: Set[Mol]) -> None:
+    def transform(self, reactant_core: ReactionCore, conversion: Dict[int, int]) -> None:
         """
-        Gets the list of rules to transform framgent back to original reactant
+        Transform the fragment into its proper reactant given reactant core and conversions
+        Assume conversion of form conversion[core_map_num] = substrate_map_num
         """
-        reactant = self._find_reactant_that_matches(reactant_template)
         
-        # for each template fragment, identify rules that need to be created
-        for bond in reactant.GetBonds():
-            # if there is a bond in the reactants that is not in the fragment, we create an AddBond rule
-            if not self.check_bond(bond):
-                self.rules.append(AddBond(bond))
-            # otherwise if it is in the fragment but is not matching, we add a ModifyBond rule
+        sub_to_core = {conversion[key] : key for key in conversion}
+        
+        # relevant_reactant_core is part of reaction core that is relevant to current fragment
+        relevant_reactant_core = ReactionCore()
+        for atom in reactant_core.atoms:
+            if atom.GetAtomMapNum() in self.atom_map_nums:
+                relevant_reactant_core.add_atom(atom)
+        
+        for bond in reactant_core.bonds:
+            endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
+            if endpoint1 in relevant_reactant_core.atom_map_nums and endpoint2 in relevant_reactant_core.atom_map_nums:
+                relevant_reactant_core.add_bond(bond)
+        
+        # all changes that need to be made to self are in relevant_reactant_core
+        # we use this to see if we need to add, remove, or modify a bond
+        
+        atom_bond_index_to_add = max(sub_to_core)
+        for bond in reactant_core.bonds():
+            # if there is a bond in the reactants that is not in the fragment, we add it
+            endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
+            self_endpoint1, self_endpoint2 = conversion[endpoint1], conversion[endpoint2]
+            if not self.check_bond_map_num(self_endpoint1, self_endpoint2):
+                atom_bond_index_to_add = self._add_bond_from_core(bond, conversion, atom_bond_index_to_add)
+            # otherwise if it is in the fragment but is not matching, we try to modify it
             else:
-                endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom.GetAtomMapNum()
-                curr_bond = self.get_bond_from_atom_map_num(endpoint1, endpoint2)
+                curr_bond = self.get_bond_from_atom_map_num(self_endpoint1, self_endpoint2)
                 if not curr_bond.Match(bond):
-                    self.rules.append(ModifyBond(bond))
+                    self._modify_bond(bond, curr_bond)
         
-        # now we check for bonds that are in fragment that are not in reactant, if so add a RemoveBond rule
+        # # now we check for bonds that are in fragment that are not in reactant, if so remove bond
         for bond in self.bonds:
-            endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom.GetAtomMapNum()
-            if utils.find_bond(endpoint1, endpoint2, [reactant]) is None:
-                self.rules.append(RemoveBond(bond))
-                
-                        
+            endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
+            core_endpoint1, core_endpoint2 = sub_to_core[endpoint1], sub_to_core[endpoint2]
+            if reactant_core.check_bond_map_num(core_endpoint1, core_endpoint2):
+                self.remove_bond(bond)
+
+    def _add_bond_from_core(self, core_bond: Bond, core_to_sub: Dict[int, int], next_index_to_add) -> int:
+        """
+        Adds a bond from core to self, uses core_to_sub map to help with map number assignment
+        Returns next_index_to_add + however many atoms added
+        """
+        atom1, atom2 = core_bond.GetBeginAtom(), core_bond.GetEndAtom()
+        sub_atom1, sub_atom2 = core_to_sub[atom1.GetAtomMapNum()], core_to_sub[atom2.GetAtomMapNum()]
+        # check if either atom is not in self:
+        num_added = 0
+        if not self.check_atom_map_num(sub_atom1):
+            atom1.SetAtomMapNum(next_index_to_add + num_added + 1)
+            self.add_atom(atom1)
+            num_added += 1
+        if not self.check_atom_map_num(sub_atom2):
+            atom2.SetAtomMapNum(next_index_to_add + num_added + 1)
+            self.add_atom(atom2)
+            num_added += 1
         
+        self.add_bond(core_bond)
+        
+        return next_index_to_add + num_added
+            
+    
+    
+    def _modify_bond(self, core_bond: Bond, fragment_bond: Bond) -> None:
+        """
+        Modifies fragment_bond to fit core_bond's properties (double, single, etc.)
+        """
+        
+        changed_props = self._find_changed_props(core_bond, fragment_bond)
+        # apply new properties to the matching bond in fragment
+        for prop in changed_props:
+            other_prop = changed_props[prop]
+            if type(other_prop) is bool:
+                fragment_bond.SetBoolProp(prop, other_prop)
+            elif type(other_prop) is float:
+                fragment_bond.SetDoubleProp(prop, other_prop)
+            elif type(other_prop) is int:
+                fragment_bond.SetIntProp(prop, other_prop)
+            else:
+                fragment_bond.SetProp(prop, other_prop)
+
+    
+    def _find_changed_props(self, core_bond: Bond, fragment_bond: Bond) -> dict:
+        prop_dict = {}
+        for prop in fragment_bond.GetPropNames():
+            other_prop = core_bond.GetProp(prop)
+            if fragment_bond.GetProp(prop) != other_prop:
+                prop_dict[prop] = other_prop
+        
+        return prop_dict
     
     def _find_reactant_that_matches(self, reactant_template: Set[Mol]) -> Mol:
         """
@@ -311,4 +374,3 @@ class Fragment(ReactionCore):
                 bonds_so_far.add(bond)
         
         return bonds_so_far
-        
