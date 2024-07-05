@@ -9,6 +9,8 @@ from rdkit.Chem.rdChemReactions import ChemicalReaction
 from typing import List, Set, Tuple
 from rxnmapper import RXNMapper
 
+import re
+
 from classes.partial_molecule import ReactionCore
 from utils import find_atom, find_bond
 
@@ -25,8 +27,16 @@ def get_reaction_core(reactants_smiles: List[str], products_smiles: List[str]) -
     second index is list of reactant in Mol objects
     third is list of products in Mol objects
     """
-    reactants_smarts = '.'.join([smiles for smiles in reactants_smiles])
-    products_smarts = '.'.join([smiles for smiles in products_smiles])
+    
+    replaced_r_group_reactant = [re.sub(r'R\d+', 'Zn', smile) for smile in reactants_smiles]
+    replaced_r_group_product = [re.sub(r'R\d+', 'Zn', smile) for smile in products_smiles]
+    
+    if any("R" in smiles for smiles in replaced_r_group_reactant) or any ("R" in smiles for smiles in replaced_r_group_product):
+        replaced_r_group_reactant = [re.sub(r'R+', 'Zn', smile) for smile in reactants_smiles]
+        replaced_r_group_product = [re.sub(r'R+', 'Zn', smile) for smile in products_smiles]
+    
+    reactants_smarts = '.'.join([mol for mol in replaced_r_group_reactant])
+    products_smarts = '.'.join([mol for mol in replaced_r_group_product])
     reaction_smarts_without_atom_map = reactants_smarts + ">>" + products_smarts
     
     # add atom map nums to reaction smarts
@@ -176,11 +186,11 @@ def compare_bond(reactant_atom: Atom, product_atom: Atom, reactant_bond: Bond):
 ##################################################################################################
 
 
-def extend_reaction_core(reactant_mol: List[Mol], product_mol: List[Mol], reaction_core: ReactionCore) -> str:
+def extend_reaction_core(reactant_mol: List[Mol], product_mol: List[Mol], reaction_core: ReactionCore) -> ReactionCore:
     """
     Takes the current core in terms of atoms and bonds and extends the reaction core
     Heurstics found in section 2.2 of Route Designer paper
-    Returns the reaction SMARTS for the reaction core
+    Returns the reaction core that corrosponds to the products
     """
 
     # create copy of reaction_core[0] to iterate through
@@ -198,8 +208,7 @@ def extend_reaction_core(reactant_mol: List[Mol], product_mol: List[Mol], reacti
     # make identical reaction core for products and get SMARTS
     product_core = ReactionCore()
     duplicate_reaction_core_to_product_core(reaction_core, product_core, product_mol)
-    return reaction_core.get_smarts() + ">>" + product_core.get_smarts()
-
+    return product_core
 
 def extend_primary_bonds(atom: Atom, reaction_core: ReactionCore, atom_map_nums: Set[int]) -> None:
     """
@@ -332,6 +341,8 @@ def get_leaving_group(reactant_mol: List[Mol], product_mol: List[Mol], reaction_
     # we check for bonds being broken in reaction core
     # the only place leaving groups can occur is from bonds in reaction core as their properties change
     # such as neighbors, degree, etc.
+    to_add_atoms = set()
+    to_add_bonds = set()
     for core_atom in reaction_core.atoms:
         # find leaving group
         product_atom = find_atom(core_atom.GetAtomMapNum(), product_mol)
@@ -343,16 +354,20 @@ def get_leaving_group(reactant_mol: List[Mol], product_mol: List[Mol], reaction_
         # add atoms
         leaving_atoms = {find_atom(num, reactant_mol) for num in leaving_map_num}
         for atom in leaving_atoms:
-            reaction_core.add_atom(atom)
+            to_add_atoms.add(atom)
         atom_map_nums = atom_map_nums.union(leaving_map_num)
         # add bonds
         for atom in leaving_atoms:
             for bond in atom.GetBonds():
                 neighbor = bond.GetOtherAtom(atom)
                 if neighbor.GetAtomMapNum() in leaving_map_num and neighbor.GetAtomMapNum() not in atom_map_nums:
-                    reaction_core.add_atom(neighbor)
-                    reaction_core.add_bond(bond)
+                    to_add_atoms.add(neighbor)
+                    to_add_bonds.add(bond)
                     atom_map_nums.add(neighbor.GetAtomMapNum())
+    
+    for atom, bond in zip(to_add_atoms, to_add_bonds):
+        reaction_core.add_atom(atom)
+        reaction_core.add_bond(bond)
 
 
 def duplicate_reaction_core_to_product_core(reactant_core: ReactionCore, product_core: ReactionCore, products: List[Mol]) -> None:
@@ -363,34 +378,7 @@ def duplicate_reaction_core_to_product_core(reactant_core: ReactionCore, product
         product_atom = find_atom(atom.GetAtomMapNum(), products)
         product_core.add_atom(product_atom)
     
-    for bond in reactant_core.bonds:
-        product_bond = find_bond(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum(), products)
-        if product_core.check_atom(product_bond.GetBeginAtom()) and product_core.check_atom(product_bond.GetEndAtom()):
-            product_core.add_bond(product_bond)
-
-
-def find_atom(atom_map_num: int, mols: List[Mol]) -> Atom:
-    """
-    Finds Atom object that has the same atom map number as atom_map_num
-    :param atom_map_num:
-    :param mols:
-    :return:
-    """
-    for mol in mols:
-        for atom in mol.GetAtoms():
-            if atom.GetAtomMapNum() == atom_map_num:
-                return atom
-    return None
-
-
-def find_bond(index1: int, index2: int, mols: List[Mol]) -> Bond:
-    """
-    Finds Bond object that has same bond map numbers as index1 and index2
-    """
-    
-    for mol in mols:
-        for bond in mol.GetBonds():
-            possible1, possible2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
-            if (index1 == possible1 and index2 == possible2) or (index1 == possible2 and index2 == possible1):
-                return bond
-    return None
+    for product in products:
+        for bond in product.GetBonds():
+            if product_core.check_atom(bond.GetBeginAtom()) and product_core.check_atom(bond.GetEndAtom()):
+                product_core.add_bond(bond)
