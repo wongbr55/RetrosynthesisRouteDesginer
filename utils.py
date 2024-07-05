@@ -6,9 +6,10 @@ from rdkit import Chem
 from rdkit.Chem.rdchem import Mol, Atom, Bond, BondType
 from rdkit.Chem import Draw
 from rdkit.Chem.rdChemReactions import ChemicalReaction
-from typing import List, Set, Tuple
+from typing import List, Set, Tuple, Iterable
 
-def find_atom(atom_map_num: int, mols: List[Mol]) -> Atom:
+
+def find_atom(atom_map_num: int, mols: Iterable[Mol]) -> Atom:
     """
     Finds Atom object that has the same atom map number as atom_map_num
     """
@@ -19,7 +20,14 @@ def find_atom(atom_map_num: int, mols: List[Mol]) -> Atom:
     return None
 
 
-def find_bond(index1: int, index2: int, mols: List[Mol]) -> Bond:
+def find_bond_set(index1: int, index2: int, bonds: Iterable[Bond]) -> Bond:
+    for bond in bonds:
+        possible1, possible2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
+        if (index1 == possible1 and index2 == possible2) or (index1 == possible2 and index2 == possible1):
+            return bond
+    return None
+
+def find_bond(index1: int, index2: int, mols: Iterable[Mol]) -> Bond:
     """
     Finds Bond object that has same bond map numbers as index1 and index2
     """
@@ -32,7 +40,7 @@ def find_bond(index1: int, index2: int, mols: List[Mol]) -> Bond:
     return None
 
 
-def highlight_reaction_core(mol, changing_atoms, changing_bonds):
+def highlight_reaction_core(mol, changing_atoms, changing_bonds, filename):
     """
     Draws highlted reaction core on reactant and product
     Only used for debugging
@@ -45,7 +53,7 @@ def highlight_reaction_core(mol, changing_atoms, changing_bonds):
     bond_indices = [bond.GetIdx() for bond in mol.GetBonds() if
                     (bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()) in changing_bonds or (
                         bond.GetEndAtomIdx(), bond.GetBeginAtomIdx()) in changing_bonds]
-    return Draw.MolToFile(mol, "testing.png", highlightAtoms=atom_indices, highlightBonds=bond_indices)
+    return Draw.MolToFile(mol, filename, highlightAtoms=atom_indices, highlightBonds=bond_indices)
 
 
 def print_atom_and_bond(reaction_core: Tuple[Set[Atom], Set[Bond]]) -> None:
@@ -61,3 +69,12 @@ def print_atom_and_bond(reaction_core: Tuple[Set[Atom], Set[Bond]]) -> None:
     print("## BONDS ##")
     for bond in reaction_core[1]:
         print("From " + str(bond.GetBeginAtom().GetAtomMapNum()) + " to " + str(bond.GetEndAtom().GetAtomMapNum()))
+        
+
+# below are used to networkx graph matching
+def node_match(n1, n2):
+    return n1['label'] == n2['label']
+
+
+def edge_match(e1, e2):
+    return e1['weight'] == e2['weight']
