@@ -22,7 +22,6 @@ def get_reactants_for_substrate(substrate: str, reactant_core: ReactionCore, pro
     """
     Matches the core template to a fixed substrate and returns proper reactants
     """
-    
     substrate_mol = Chem.MolFromSmiles(substrate)
     counter = 1
     for atom in substrate_mol.GetAtoms():
@@ -45,13 +44,7 @@ def get_reactants_for_substrate(substrate: str, reactant_core: ReactionCore, pro
     for atom in product_core.atoms:
         core_graph.add_node(atom.GetAtomMapNum(), label=atom.GetAtomicNum())
     for bond in product_core.bonds:
-        if bond.GetBondType() == BondType.SINGLE:
-            bond_type = 1
-        elif bond.GetBondType() == BondType.DOUBLE:
-            bond_type = 2
-        else:
-            bond_type = 3
-        core_graph.add_edge(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum(), weight=bond_type)
+        core_graph.add_edge(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum(), weight=bond.GetBondTypeAsDouble())
         
     matcher = nx.algorithms.isomorphism.GraphMatcher(substrate_graph, core_graph, node_match=node_match, edge_match=edge_match)
     subgraphs = [subgraph for subgraph in matcher.subgraph_isomorphisms_iter()]
@@ -70,9 +63,7 @@ def get_reactants_for_substrate(substrate: str, reactant_core: ReactionCore, pro
 
     # use the reaction core to make changes to different fragments
     for fragment in fragments:
-        print(fragment)
         fragment.transform(reactant_core, core_to_substrate, core_fragment_edges)
-        print(fragment)
     
     return {fragment.get_mol() for fragment in fragments}
     
@@ -92,10 +83,10 @@ def check_if_bond_in_core(bond: Bond, other_core: ReactionCore) -> bool:
 
 if __name__ == "__main__":
     core = ce.get_reaction_core(["O=C1C(C(OCC)=O)CCC1", "C=CC(C[R1])=C"], ["O=C1C(C(OCC)=O)(CCC(C[R1])=C)CCC1"])
-    # core = ce.get_reaction_core(["C=C/C=C\C([R])=C"], ["[R]C1=CC=CC=C1"])
+    # core = ce.get_reaction_core(["[R]C1=CC=CC=C1", "C"], ["C1=CC=CC=C1", "[R]C"])
     product_core = ce.extend_reaction_core(core[1], core[2], core[0])
     mols = get_reactants_for_substrate("O=C1C(C(OCC)=O)(CCC(C[C])=C)CCC1", core[0], product_core)
-    # mols = get_reactants_for_substrate("CCC1=CC=CC=C1", core[0], product_core)
+    # mols = get_reactants_for_substrate("C1=CC=CC=C1", core[0], product_core)
     index = 1
     for mol in mols:
         highlight_reaction_core(mol, set(), set(), "new_reactant" + str(index) + ".png")
