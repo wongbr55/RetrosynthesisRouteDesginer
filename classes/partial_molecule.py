@@ -297,7 +297,6 @@ class Fragment(ReactionCore):
         Returns next_index_to_add + however many atoms added
         """
         atom1, atom2 = core_bond.GetBeginAtom(), core_bond.GetEndAtom()
-        # sub_atom1, sub_atom2 = core_to_sub[atom1.GetAtomMapNum()], core_to_sub[atom2.GetAtomMapNum()]
         
         # check if either atom is not in self:
         num_added = 0
@@ -306,11 +305,15 @@ class Fragment(ReactionCore):
             atom1.SetAtomMapNum(next_index_to_add + num_added + 1)
             self.add_atom(atom1)
             num_added += 1
+        else:
+            atom1.SetAtomMapNum(core_to_sub[atom1.GetAtomMapNum()])
         if atom2.GetAtomMapNum() not in core_to_sub:
             core_to_sub[atom1.GetAtomMapNum()] = next_index_to_add + num_added + 1
             atom2.SetAtomMapNum(next_index_to_add + num_added + 1)
             self.add_atom(atom2)
             num_added += 1
+        else:
+            atom2.SetAtomMapNum(core_to_sub[atom2.GetAtomMapNum()])
         self.add_bond(core_bond)
         return next_index_to_add + num_added
     
