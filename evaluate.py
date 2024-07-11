@@ -9,7 +9,7 @@ from core_extraction import get_reaction_core, extend_reaction_core
 from template_rule_retrieval import get_reactants_for_substrate
 import csv
 
-def evaluate_csv(ground_truth_csv: str, reaction_template_csv: str) -> Dict[str, Tuple[List[List[int]], List[float]]]:
+def evaluate_csv(ground_truth_csv: str, reaction_template_csv: str) -> Dict[str, Tuple[List[List[int]], List[float]] | str]:
     """
     Evaluates a csv file using exact string matching and tanimoto accuracy heurstics from evaluate function
     Assume csv format is of form: Figure, Product 1 SMILES, Product 2 SMILES, Reactant 1 SMILES, Reactant 2 SMILES, Reactant 3 SMILES
