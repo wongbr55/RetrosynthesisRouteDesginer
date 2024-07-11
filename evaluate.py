@@ -7,11 +7,10 @@ from rdkit import Chem, DataStructs
 from typing import Set, Tuple, List, Dict
 
 
-def evaluate(ground_truth_reactants: List[str], generated_reactants: List[str]) -> Tuple[List[List[int]], List[List[float]]]:
+def evaluate(ground_truth_reactants: List[str], generated_reactants: List[str]) -> Tuple[List[List[int]], List[float]]:
     """
     Uses exact canonical string match and tanimoto similarity to evalute algorithim for a single reaction
     Returns a tuple of similarity matricies for exact string matching and tanimoto similarity (in that order)
-    
     """
     # get canonical strings for both ground truth and generated
     canonical_ground_truth = []
@@ -26,12 +25,14 @@ def evaluate(ground_truth_reactants: List[str], generated_reactants: List[str]) 
     tanimoto_matrix = []
     for generated in canonical_generated:
         curr_exact_match = []
-        curr_tanimoto = []
+        curr_tanimoto = 0
         for ground_truth in canonical_ground_truth:
             curr_exact_match.append(int(generated == ground_truth))
-            curr_tanimoto.append(tanimoto_similarity(generated, ground_truth))
+            similarity = tanimoto_similarity(generated, ground_truth)
+            if similarity == 1:
+                curr_tanimoto += 1
         exact_match_matrix.append(curr_exact_match)
-        tanimoto_matrix.append(curr_tanimoto)
+        tanimoto_matrix.append(curr_tanimoto / len(canonical_ground_truth))
     
     return exact_match_matrix, tanimoto_matrix
             
