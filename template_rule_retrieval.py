@@ -54,7 +54,7 @@ def get_reactants_for_substrate(substrate: str, reactant_core: ReactionCore, pro
     # we can figure out where to break bonds to generate fragments in core area
     core_fragment_edges = set()
     for bond in product_core.bonds:
-        if not check_if_bond_in_core(bond, reactant_core):
+        if not reactant_core.check_bond(bond):
              core_fragment_edges.add((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))
     core_to_substrate = {subgraphs[0][key]: key for key in subgraphs[0]}
     substrate_fragment_edges = {(core_to_substrate[edge[0]], core_to_substrate[edge[1]]) for edge in core_fragment_edges}
@@ -66,19 +66,6 @@ def get_reactants_for_substrate(substrate: str, reactant_core: ReactionCore, pro
         fragment.transform(reactant_core, core_to_substrate, core_fragment_edges)
     
     return {fragment.get_mol() for fragment in fragments}
-    
-
-def check_if_bond_in_core(bond: Bond, other_core: ReactionCore) -> bool:
-    """
-    Checks whether or not a bond exists in a set of molecules
-    """
-    map_num1, map_num2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
-    for possible_bond in other_core.bonds:
-        possible1, possible2 = possible_bond.GetBeginAtom().GetAtomMapNum(), possible_bond.GetEndAtom().GetAtomMapNum()
-        if (map_num1 == possible1 and map_num2 == possible2) or (map_num1 == possible2 and map_num2 == possible1):
-            return True
-    
-    return False
 
 
 if __name__ == "__main__":
