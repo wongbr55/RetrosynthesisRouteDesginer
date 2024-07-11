@@ -12,7 +12,7 @@ import csv
 def evaluate_csv(ground_truth_csv: str, reaction_template_csv: str) -> Dict[str, Tuple[List[List[int]], List[float]]]:
     """
     Evaluates a csv file using exact string matching and tanimoto accuracy heurstics from evaluate function
-    Assume csv format is of form: Figure, Product 1 SMILES, Product 2 SMILES, Reactant 1 SMILES, Reactant 2 SMILES
+    Assume csv format is of form: Figure, Product 1 SMILES, Product 2 SMILES, Reactant 1 SMILES, Reactant 2 SMILES, Reactant 3 SMILES
     Returns a dict of evaluation metrics for each substrate
     """
     
@@ -27,12 +27,16 @@ def evaluate_csv(ground_truth_csv: str, reaction_template_csv: str) -> Dict[str,
             products = []
             reactants = []
             if row[1] != "": products.append(row[1])
-            # if row[2] != "": products.append(row[2])
+            if row[2] != "": products.append(row[2])
             if row[3] != "": reactants.append(row[3])
             if row[4] != "": reactants.append(row[4])
-            core = get_reaction_core(reactants, products)
-            product_core = extend_reaction_core(core[1], core[2], core[0])
-            reaction_cores[filename] = (core[0], product_core)
+            if row[5] != "": reactants.append(row[5])
+            try:
+                core = get_reaction_core(reactants, products)
+                product_core = extend_reaction_core(core[1], core[2], core[0])
+                reaction_cores[filename] = (core[0], product_core)
+            except:
+                reaction_cores[filename] = "ERROR UPON CORE EXTRACTION"
     
     evaluations = {}
     with open(ground_truth_csv, "r") as csvfile:
@@ -43,20 +47,29 @@ def evaluate_csv(ground_truth_csv: str, reaction_template_csv: str) -> Dict[str,
             cores = []
             filename = row[0]
             for file in reaction_cores:
-                if file in filename:
+                if file in filename and reaction_cores[file] is not str:
                     cores.append(reaction_cores[file][0])
                     cores.append(reaction_cores[file][1])
                     break
+                elif file in filename and reaction_cores[file] is str:
+                    break
+            if cores == []:
+                evaluations[filename] = "ERROR UPON CORE EXTRACTION"
+            else:
             # get generated reactants and evaluate againsy ground truth
-            substrate = row[1]
-            ground_truth_reactants = []
-            if row[3] != "": ground_truth_reactants.append(row[3])
-            if row[4] != "": ground_truth_reactants.append(row[4])
-            generated_reactants = get_reactants_for_substrate(substrate, cores[0], cores[1])
-            
-            generated_reactant_smiles = [Chem.MolToSmiles(mol) for mol in generated_reactants]
-            evaluation = evaluate(ground_truth_reactants, generated_reactant_smiles)
-            evaluations[filename] = evaluation
+                substrate = row[1]
+                ground_truth_reactants = []
+                if row[3] != "": ground_truth_reactants.append(row[3])
+                if row[4] != "": ground_truth_reactants.append(row[4])
+                if row[5] != "": ground_truth_reactants.append(row[5])
+                
+                try:
+                    generated_reactants = get_reactants_for_substrate(substrate, cores[0], cores[1])
+                    generated_reactant_smiles = [Chem.MolToSmiles(mol) for mol in generated_reactants]
+                    evaluation = evaluate(ground_truth_reactants, generated_reactant_smiles)
+                    evaluations[filename] = evaluation
+                except:
+                    evaluations[filename] = "ERROR UPON EVALUATION"
     
     return evaluations
 
