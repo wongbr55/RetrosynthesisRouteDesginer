@@ -5,7 +5,60 @@ Contains functionaility for both exact string mathcing using canonical SMILES an
 
 from rdkit import Chem, DataStructs
 from typing import Set, Tuple, List, Dict
+from core_extraction import get_reaction_core, extend_reaction_core
+from template_rule_retrieval import get_reactants_for_substrate
+import csv
 
+def evaluate_csv(ground_truth_csv: str, reaction_template_csv: str) -> Dict[str, Tuple[List[List[int]], List[float]]]:
+    """
+    Evaluates a csv file using exact string matching and tanimoto accuracy heurstics from evaluate function
+    Assume csv format is of form: Figure, Product 1 SMILES, Product 2 SMILES, Reactant 1 SMILES, Reactant 2 SMILES
+    Returns a dict of evaluation metrics for each substrate
+    """
+    
+    # reaction cores maps a file to its reactant and product cores
+    # to be used when evalauting files in the ground truth
+    reaction_cores = {}
+    with open(reaction_template_csv, "r") as csvfile:
+        reaction_templates = csv.reader(csvfile)
+        next(reaction_templates)
+        for row in reaction_templates:
+            filename = row[0]
+            products = []
+            reactants = []
+            if row[1] != "": products.append(row[1])
+            # if row[2] != "": products.append(row[2])
+            if row[3] != "": reactants.append(row[3])
+            if row[4] != "": reactants.append(row[4])
+            core = get_reaction_core(reactants, products)
+            product_core = extend_reaction_core(core[1], core[2], core[0])
+            reaction_cores[filename] = (core[0], product_core)
+    
+    evaluations = {}
+    with open(ground_truth_csv, "r") as csvfile:
+        ground_truths = csv.reader(csvfile)
+        next(ground_truths)
+        for row in ground_truths:
+            # get the reaction cores:
+            cores = []
+            filename = row[0]
+            for file in reaction_cores:
+                if file in filename:
+                    cores.append(reaction_cores[file][0])
+                    cores.append(reaction_cores[file][1])
+                    break
+            # get generated reactants and evaluate againsy ground truth
+            substrate = row[1]
+            ground_truth_reactants = []
+            if row[3] != "": ground_truth_reactants.append(row[3])
+            if row[4] != "": ground_truth_reactants.append(row[4])
+            generated_reactants = get_reactants_for_substrate(substrate, cores[0], cores[1])
+            
+            generated_reactant_smiles = [Chem.MolToSmiles(mol) for mol in generated_reactants]
+            evaluation = evaluate(ground_truth_reactants, generated_reactant_smiles)
+            evaluations[filename] = evaluation
+    
+    return evaluations
 
 def evaluate(ground_truth_reactants: List[str], generated_reactants: List[str]) -> Tuple[List[List[int]], List[float]]:
     """
