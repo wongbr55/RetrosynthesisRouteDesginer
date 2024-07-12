@@ -12,7 +12,7 @@ from rxnmapper import RXNMapper
 import re
 
 from classes.partial_molecule import ReactionCore
-from utils import find_atom, find_bond
+from utils import find_atom, find_bond, highlight_reaction_core
 
 ##################################################################################################
 # CORE EXTRACTION
@@ -56,11 +56,35 @@ def get_reaction_core_with_smarts(reaction_smarts: str) -> Tuple[ReactionCore, L
     # setup Mol objects
     reactant_mol = []
     product_mol = []
+    counter = 1
     for mol in reaction.GetReactants():
         reactant_mol.append(mol)
+        highlight_reaction_core(mol, set(), set(), "reactant_template" + str(counter) + ".png")
+        counter += 1
+    counter = 1
     for mol in reaction.GetProducts():
         product_mol.append(mol)
+        highlight_reaction_core(mol, set(), set(), "product_template" + str(counter) + ".png")
+        counter += 1
 
+    # if we have atoms that are left unmapped we need to give them atom map numbers
+    next_index_to_add = 0
+    for mol in reactant_mol:
+        next_index_to_add = max(next_index_to_add, max({atom.GetAtomMapNum() for atom in mol.GetAtoms()}))
+    for mol in product_mol:
+        next_index_to_add = max(next_index_to_add, max({atom.GetAtomMapNum() for atom in mol.GetAtoms()}))
+    
+    for mol in reactant_mol:
+        for atom in mol.GetAtoms():
+            if atom.GetAtomMapNum() == 0:
+                atom.SetAtomMapNum(next_index_to_add + 1)
+                next_index_to_add += 1
+    for mol in product_mol:
+        for atom in mol.GetAtoms():
+            if atom.GetAtomMapNum() == 0:
+                atom.SetAtomMapNum(next_index_to_add + 1)
+                next_index_to_add += 1
+    
     # get core
     core = get_reaction_core_helper(reactant_mol, product_mol)
     return core, reactant_mol, product_mol
@@ -208,6 +232,7 @@ def extend_reaction_core(reactant_mol: List[Mol], product_mol: List[Mol], reacti
     # make identical reaction core for products and get SMARTS
     product_core = ReactionCore()
     duplicate_reaction_core_to_product_core(reaction_core, product_core, product_mol)
+    # print(reaction_core)
     return product_core
 
 def extend_primary_bonds(atom: Atom, reaction_core: ReactionCore, atom_map_nums: Set[int]) -> None:
@@ -321,8 +346,9 @@ def check_external_nonaromatic_bond(new_atom: Atom) -> bool:
     # check if it is in a ring
     if new_atom.IsInRing():
         return True
-    # TODO check if it is external
-    if new_atom.GetDegree() == 1:
+    # check if it is external
+    # we check 6 for carbon or 30 for zinc (placeholder for R group)
+    if new_atom.GetDegree() == 1 and (new_atom.GetAtomicNum() == 6 or new_atom.GetAtomicNum() == 30):
         return True
 
     return False
@@ -346,24 +372,44 @@ def get_leaving_group(reactant_mol: List[Mol], product_mol: List[Mol], reaction_
     for core_atom in reaction_core.atoms:
         # find leaving group
         product_atom = find_atom(core_atom.GetAtomMapNum(), product_mol)
-        reactant_neighbors = {atom.GetAtomMapNum() for atom in core_atom.GetNeighbors()}
-        product_neighbors = {atom.GetAtomMapNum() for atom in product_atom.GetNeighbors()}
-        leaving_map_num = {map_num for map_num in reactant_neighbors if map_num not in product_neighbors and
-                           map_num not in atom_map_nums}
-        # add leaving group to reaction core
-        # add atoms
-        leaving_atoms = {find_atom(num, reactant_mol) for num in leaving_map_num}
-        for atom in leaving_atoms:
-            to_add_atoms.add(atom)
-        atom_map_nums = atom_map_nums.union(leaving_map_num)
-        # add bonds
-        for atom in leaving_atoms:
-            for bond in atom.GetBonds():
-                neighbor = bond.GetOtherAtom(atom)
-                if neighbor.GetAtomMapNum() in leaving_map_num and neighbor.GetAtomMapNum() not in atom_map_nums:
-                    to_add_atoms.add(neighbor)
-                    to_add_bonds.add(bond)
-                    atom_map_nums.add(neighbor.GetAtomMapNum())
+        if product_atom is not None:
+            reactant_neighbors = {atom.GetAtomMapNum() for atom in core_atom.GetNeighbors()}
+            product_neighbors = {atom.GetAtomMapNum() for atom in product_atom.GetNeighbors()}
+            leaving_map_num = {map_num for map_num in reactant_neighbors if map_num not in product_neighbors and
+                            map_num not in atom_map_nums}
+            # add leaving group to reaction core
+            # add atoms
+            leaving_atoms = {find_atom(num, reactant_mol) for num in leaving_map_num}
+            for atom in leaving_atoms:
+                to_add_atoms.add(atom)
+            atom_map_nums = atom_map_nums.union(leaving_map_num)
+            # add bonds
+            for atom in leaving_atoms:
+                for bond in atom.GetBonds():
+                    neighbor = bond.GetOtherAtom(atom)
+                    if neighbor.GetAtomMapNum() in leaving_map_num and neighbor.GetAtomMapNum() not in atom_map_nums:
+                        to_add_atoms.add(neighbor)
+                        to_add_bonds.add(bond)
+                        atom_map_nums.add(neighbor.GetAtomMapNum())
+    
+    # # check to see if some are just simply absent
+    # new_atoms_to_add = set()
+    # already_added = {atom.GetAtomMapNum() for atom in to_add_atoms}
+    # for mol in reactant_mol:
+    #     for atom in mol.GetAtoms():
+    #         map_num = atom.GetAtomMapNum()
+    #         if not find_atom(map_num, product_mol) and map_num not in already_added:
+    #             new_atoms_to_add.add(atom)
+    # # check again for bonds
+    # new_bonds_to_add = set()
+    # for mol in reactant_mol:
+    #     for bond in mol.GetBonds():
+    #         endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
+    #         if find_atom(endpoint1, new_atoms_to_add) and find_atom(endpoint2, new_atoms_to_add):
+    #             new_bonds_to_add.add(bond)
+    
+    # to_add_atoms = to_add_atoms.union(new_atoms_to_add)
+    # to_add_bonds = to_add_bonds.union(new_bonds_to_add)
     
     for atom, bond in zip(to_add_atoms, to_add_bonds):
         reaction_core.add_atom(atom)
@@ -376,7 +422,8 @@ def duplicate_reaction_core_to_product_core(reactant_core: ReactionCore, product
     """
     for atom in reactant_core.atoms:
         product_atom = find_atom(atom.GetAtomMapNum(), products)
-        product_core.add_atom(product_atom)
+        if product_atom is not None:
+            product_core.add_atom(product_atom)
     
     for product in products:
         for bond in product.GetBonds():

@@ -110,15 +110,19 @@ class ReactionCore():
             # new_atom.SetAtomMapNum(counter)
             map_num_to_idx[new_atom.GetAtomMapNum()] = new_mol.AddAtom(new_atom)
             # counter += 1
+        # print(map_num_to_idx)
         for bond_num in self.bond_map_nums:
             atom_num1, atom_num2 = bond_num[0], bond_num[1]
+            # print((atom_num1, atom_num2))
             bond = self.get_bond_from_atom_map_num(atom_num1, atom_num2)
             idx1, idx2 = map_num_to_idx[atom_num1], map_num_to_idx[atom_num2]
             # new_num1, new_num2 = transfers[atom_num1], transfers[atom_num2]
             # new_mol.AddBond(new_num1, new_num2, bond.GetBondType())
             new_mol.AddBond(idx1, idx2, bond.GetBondType())
-        
-        return new_mol.GetMol()
+        new_mol = new_mol.GetMol()
+        for atom in new_mol.GetAtoms():
+            atom.SetAtomMapNum(0)
+        return new_mol
     
     def get_smarts(self) -> str:
         """
@@ -253,7 +257,10 @@ class Fragment(ReactionCore):
         # relevant_reactant_core is part of reaction core that is relevant to current fragment
         relevant_reactant_core = ReactionCore()
         for atom in reactant_core.atoms:
-            if conversion[atom.GetAtomMapNum()] in self.atom_map_nums:
+            if atom.GetAtomMapNum() not in conversion and any(other_atom.GetAtomMapNum() in conversion for other_atom in atom.GetNeighbors()):
+                if any(conversion[other_atom.GetAtomMapNum()] in self.atom_map_nums for other_atom in atom.GetNeighbors()):
+                    relevant_reactant_core.add_atom(atom)
+            elif conversion[atom.GetAtomMapNum()] in self.atom_map_nums:
                 relevant_reactant_core.add_atom(atom)
         
         for bond in reactant_core.bonds:
@@ -263,7 +270,7 @@ class Fragment(ReactionCore):
         
         # all changes that need to be made to self are in relevant_reactant_core
         # we use this to see if we need to add, remove, or modify a bond
-        atom_bond_index_to_add = max({conversion[key] : key for key in conversion})
+        atom_bond_index_to_add = max(self.atom_map_nums)
         for bond in relevant_reactant_core.bonds:
             # if there is a bond in the reactants that is not in the fragment, we add it
             endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
@@ -278,6 +285,7 @@ class Fragment(ReactionCore):
                 if curr_bond is None:
                     atom_bond_index_to_add = self._add_bond_from_core(bond, conversion, atom_bond_index_to_add)
                 elif curr_bond.GetBondType() != bond.GetBondType():
+                    # print("Modifying " + str(self_endpoint1) + " and " + str(self_endpoint2))
                     curr_bond.SetBondType(bond.GetBondType())
         
         # now we check for bonds that are in fragment that are not in reactant, if so remove bond
@@ -302,18 +310,22 @@ class Fragment(ReactionCore):
         num_added = 0
         if atom1.GetAtomMapNum() not in core_to_sub:
             core_to_sub[atom1.GetAtomMapNum()] = next_index_to_add + num_added + 1
+            # print("From " + str(atom1.GetAtomMapNum()) + " to " + str(next_index_to_add + num_added + 1))
             atom1.SetAtomMapNum(next_index_to_add + num_added + 1)
             self.add_atom(atom1)
             num_added += 1
         else:
             atom1.SetAtomMapNum(core_to_sub[atom1.GetAtomMapNum()])
         if atom2.GetAtomMapNum() not in core_to_sub:
-            core_to_sub[atom1.GetAtomMapNum()] = next_index_to_add + num_added + 1
+            core_to_sub[atom2.GetAtomMapNum()] = next_index_to_add + num_added + 1
+            # print("From " + str(atom2.GetAtomMapNum()) + " to " + str(next_index_to_add + num_added + 1))
             atom2.SetAtomMapNum(next_index_to_add + num_added + 1)
             self.add_atom(atom2)
             num_added += 1
         else:
             atom2.SetAtomMapNum(core_to_sub[atom2.GetAtomMapNum()])
+        
+        # print("Adding " + str(atom1.GetAtomMapNum()) + " and " + str(atom2.GetAtomMapNum()))
         self.add_bond(core_bond)
         return next_index_to_add + num_added
     
