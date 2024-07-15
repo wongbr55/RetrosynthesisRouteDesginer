@@ -67,6 +67,8 @@ def get_reactants_for_substrate(substrate: str, reactant_core: ReactionCore, pro
     # use the reaction core to make changes to different fragments
     
     next_index_to_add = max({atom.GetAtomMapNum() for atom in substrate_mol.GetAtoms()})
+    print(next_index_to_add)
+    
     reactants = set()
     for fragment in fragments:
         next_index_to_add = fragment.transform(reactant_core, core_to_substrate, core_fragment_edges, next_index_to_add)
