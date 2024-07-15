@@ -56,16 +56,10 @@ def get_reaction_core_with_smarts(reaction_smarts: str) -> Tuple[ReactionCore, L
     # setup Mol objects
     reactant_mol = []
     product_mol = []
-    counter = 1
     for mol in reaction.GetReactants():
         reactant_mol.append(mol)
-        highlight_reaction_core(mol, set(), set(), "reactant_template" + str(counter) + ".png")
-        counter += 1
-    counter = 1
     for mol in reaction.GetProducts():
         product_mol.append(mol)
-        highlight_reaction_core(mol, set(), set(), "product_template" + str(counter) + ".png")
-        counter += 1
 
     # if we have atoms that are left unmapped we need to give them atom map numbers
     next_index_to_add = 0
@@ -73,17 +67,23 @@ def get_reaction_core_with_smarts(reaction_smarts: str) -> Tuple[ReactionCore, L
         next_index_to_add = max(next_index_to_add, max({atom.GetAtomMapNum() for atom in mol.GetAtoms()}))
     for mol in product_mol:
         next_index_to_add = max(next_index_to_add, max({atom.GetAtomMapNum() for atom in mol.GetAtoms()}))
-    
+    # print("Next index to add: " + str(next_index_to_add))
+    counter = 1
     for mol in reactant_mol:
         for atom in mol.GetAtoms():
             if atom.GetAtomMapNum() == 0:
                 atom.SetAtomMapNum(next_index_to_add + 1)
                 next_index_to_add += 1
+                # print("Next index to add: " + str(next_index_to_add))
+        highlight_reaction_core(mol, set(), set(), "reactant_template" + str(counter) + ".png")
+        counter += 1
+    counter = 1
     for mol in product_mol:
         for atom in mol.GetAtoms():
             if atom.GetAtomMapNum() == 0:
                 atom.SetAtomMapNum(next_index_to_add + 1)
                 next_index_to_add += 1
+        highlight_reaction_core(mol, set(), set(), "product_template" + str(counter) + ".png")
     
     # get core
     core = get_reaction_core_helper(reactant_mol, product_mol)
@@ -229,6 +229,9 @@ def extend_reaction_core(reactant_mol: List[Mol], product_mol: List[Mol], reacti
     # get leaving groups and add them to the reaction core
     get_leaving_group(reactant_mol, product_mol, reaction_core, atom_map_nums)
     
+    # in an aptempt to make the reaction core less generic we try to expand by an extra 1 or 2 bonds
+    add_extra_bonds(reaction_core)
+    
     # make identical reaction core for products and get SMARTS
     product_core = ReactionCore()
     duplicate_reaction_core_to_product_core(reaction_core, product_core, product_mol)
@@ -264,8 +267,8 @@ def extend_primary_bonds(atom: Atom, reaction_core: ReactionCore, atom_map_nums:
                 atom_map_nums.add(new_atom.GetAtomMapNum())
 
         # check for aromatic bonds
-        if bond.GetIsAromatic():
-            get_aromatic_ring(atom, reaction_core, atom_map_nums)
+        # if new_atom.IsInRing():
+        #     get_aromatic_ring(atom, reaction_core, atom_map_nums)
 
 
 def get_aromatic_ring(atom: Atom, reaction_core: ReactionCore, atom_map_nums: Set[int]) -> None:
@@ -278,25 +281,41 @@ def get_aromatic_ring(atom: Atom, reaction_core: ReactionCore, atom_map_nums: Se
     """
 
     ownning_mol = atom.GetOwningMol()
-    aromatic_rings = Chem.GetSymmSSSR(ownning_mol)
+    aromatic_rings = ownning_mol.GetRingInfo().AtomRings()
+    # print(aromatic_rings)
 
     # find the aromatic ring containing atom
-    aromatic_ring_containing_atom = None
+    aromatic_ring_containing_atom = []
     for ring in aromatic_rings:
         if atom.GetIdx() in ring:
-            aromatic_ring_containing_atom = ring
-            break
+            aromatic_ring_containing_atom.append(ring)
 
     # retrieve bonds connected to atom in the ring
-    for bond_idx in aromatic_ring_containing_atom:
-        bond = ownning_mol.GetBondWithIdx(bond_idx)
+    for ring in aromatic_ring_containing_atom:
+        for i, atom_idx in enumerate(ring):
+            next_atom_idx = ring[(i + 1) % len(ring)]
+            bond = ownning_mol.GetBondBetweenAtoms(atom_idx, next_atom_idx)
+            if bond is not None:
+                if not reaction_core.check_atom(bond.GetBeginAtom()):
+                    atom_map_nums.add(bond.GetBeginAtom().GetAtomMapNum())
+                    reaction_core.add_atom(bond.GetBeginAtom())
+                # print((bond.GetBeginAtom(), bond.GetEndAtom()))
+                if not reaction_core.check_atom(bond.GetEndAtom()):
+                    atom_map_nums.add(bond.GetEndAtom().GetAtomMapNum())
+                    reaction_core.add_atom(bond.GetEndAtom())
+                print((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))
+                reaction_core.add_bond(bond)
+            
+    # for ring in aromatic_ring_containing_atom:
+    #     for bond_idx in ring:
+    #         bond = ownning_mol.GetBondWithIdx(bond_idx)
 
-        if bond.GetBeginAtom().GetAtomMapNum() not in atom_map_nums and bond.GetEndAtom().GetAtomMapNum() not in atom_map_nums:
-            reaction_core.add_bond(bond)
-            reaction_core.add_atom(bond.GetBeginAtom())
-            reaction_core.add_atom(bond.GetEndAtom())
-            atom_map_nums.add(bond.GetBeginAtom().GetAtomMapNum())
-            atom_map_nums.add(bond.GetEndAtom().GetAtomMapNum())
+    #         if bond.GetBeginAtom().GetAtomMapNum() not in atom_map_nums and bond.GetEndAtom().GetAtomMapNum() not in atom_map_nums:
+    #             reaction_core.add_bond(bond)
+    #             reaction_core.add_atom(bond.GetBeginAtom())
+    #             reaction_core.add_atom(bond.GetEndAtom())
+    #             atom_map_nums.add(bond.GetBeginAtom().GetAtomMapNum())
+    #             atom_map_nums.add(bond.GetEndAtom().GetAtomMapNum())
 
 
 def add_atoms_to_core(atom: Atom, reaction_core: ReactionCore, atom_map_nums: Set[int]) -> None:
@@ -332,6 +351,27 @@ def add_atoms_to_core(atom: Atom, reaction_core: ReactionCore, atom_map_nums: Se
                 atom_seen_so_far.add(new_atom.GetAtomMapNum())
                 
         atom_seen_so_far.add(curr_atom.GetAtomMapNum())
+    
+def add_extra_bonds(reaction_core: ReactionCore) -> None:
+    
+    atoms_to_add = set()
+    bonds_to_add = set()
+    for atom in reaction_core.atoms:
+        for bond in atom.GetBonds():
+            other_atom = bond.GetOtherAtom(atom)
+            if not reaction_core.check_bond(bond) and other_atom.GetAtomicNum() != 30:
+                bonds_to_add.add(bond)
+                if not reaction_core.check_atom(other_atom):
+                    atoms_to_add.add(other_atom)
+            # for other_bond in other_atom.GetBonds():
+            #     other_other_atom = other_bond.GetOtherAtom(other_atom)
+            #     if not reaction_core.check_bond(other_bond) and other_other_atom.GetAtomicNum() != 30:
+            #         bonds_to_add.add(bond)
+            #         if not reaction_core.check_atom(other_other_atom):
+            #             atoms_to_add.add(other_other_atom)
+    
+    reaction_core.add_atoms(atoms_to_add)
+    reaction_core.add_bonds(bonds_to_add)
 
 
 def check_external_nonaromatic_bond(new_atom: Atom) -> bool:

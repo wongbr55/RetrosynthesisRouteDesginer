@@ -90,10 +90,21 @@ class ReactionCore():
         """
         Returns Bond object with endpoints endpoint1 and endpoint2
         """
+        # print("Looking for " + str((endpoint1, endpoint2)))
         for bond in self.bonds:
             possible1, possible2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
+            # print("Possible " + str((possible1, possible2)))
             if (possible1 == endpoint1 and possible2 == endpoint2) or (possible1 == endpoint2 and possible2 == endpoint1):
                 return bond
+        return None
+
+    def get_atom_from_atom_map_num(self, atom_map_num: int) -> Atom:
+        """
+        Returns Atom object with atom_map_num
+        """
+        for atom in self.atoms:
+            if atom.GetAtomMapNum() == atom_map_num:
+                return atom
         return None
          
     def get_mol(self) -> Mol:
@@ -103,14 +114,25 @@ class ReactionCore():
         """
         new_mol = EditableMol(Chem.Mol())
         map_num_to_idx = {}
-        for atom in self.atoms:
+        # print("######")
+        # print(self.atom_map_nums)
+        # print({atom.GetAtomMapNum() for atom in self.atoms})
+        # print("######")
+        for atom_map in self.atom_map_nums:
             # transfers[atom.GetAtomMapNum()] = counter
+            # print(atom_map)
+            atom = self.get_atom_from_atom_map_num(atom_map)
             new_atom = Atom(atom.GetAtomicNum())
+            # print(atom.GetAtomMapNum())
             new_atom.SetAtomMapNum(atom.GetAtomMapNum())
             # new_atom.SetAtomMapNum(counter)
-            map_num_to_idx[new_atom.GetAtomMapNum()] = new_mol.AddAtom(new_atom)
+            map_num_to_idx[atom.GetAtomMapNum()] = new_mol.AddAtom(new_atom)
             # counter += 1
         # print(map_num_to_idx)
+        # print("######")
+        # print(self.bond_map_nums)
+        # print({(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()) for bond in self.bonds})
+        # print("######")
         for bond_num in self.bond_map_nums:
             atom_num1, atom_num2 = bond_num[0], bond_num[1]
             # print((atom_num1, atom_num2))
@@ -120,8 +142,8 @@ class ReactionCore():
             # new_mol.AddBond(new_num1, new_num2, bond.GetBondType())
             new_mol.AddBond(idx1, idx2, bond.GetBondType())
         new_mol = new_mol.GetMol()
-        for atom in new_mol.GetAtoms():
-            atom.SetAtomMapNum(0)
+        # for atom in new_mol.GetAtoms():
+        #     atom.SetAtomMapNum(0)
         return new_mol
     
     def get_smarts(self) -> str:
@@ -145,15 +167,6 @@ class Fragment(ReactionCore):
             self.bonds.add(bond)
             self.bond_map_nums.add((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))
     
-    def get_atom_from_atom_map_num(self, atom_map_num: int) -> Atom:
-        """
-        Returns Atom object with atom_map_num
-        """
-        for atom in self.atoms:
-            if atom.GetAtomMapNum() == atom_map_num:
-                return atom
-        return None
-    
     def remove_atom(self, atom: Atom) -> None:
         """
         Removes atom from self.atoms and self.atom_map_nums
@@ -169,7 +182,7 @@ class Fragment(ReactionCore):
         self.bonds.remove(bond)
         if (endpoint1, endpoint2) in self.bond_map_nums:
             self.bond_map_nums.remove((endpoint1, endpoint2))
-        elif (endpoint2, endpoint1) in self.bond_map_nums:
+        else: # (endpoint2, endpoint1) in self.bond_map_nums:
             self.bond_map_nums.remove((endpoint2, endpoint1))
         # otherwise only one endpoint is in self.bonds and we ignore
         
@@ -209,68 +222,45 @@ class Fragment(ReactionCore):
         fragments.add(new_fragment)
         return atoms_seen_so_far_map_num.union(new_fragment_atoms_map_num)
     
-    # def fragment(self, edge: Tuple[int]):
-    #     """
-    #     may not be needed
-    #     From the given edge, create a new fragment object such that the current fragment object is broken
-    #     At "edge" and the new and current fragment are two "new" fragments
-        
-    #     Returns a new Fragment object
-    #     """
-    #     if not self.check_bond_map_num(edge[0], edge[1]):
-    #         return None
-
-    #     endpoint1, endpoint2 = edge[0], edge[1]
-    #     atom1 = self.get_atom_from_atom_map_num(endpoint1)
-    #     fragment1_atom_set, fragment1_bond_set, fragment1_atom_map_num, atoms_to_exclude = set(), set(), set(), set()
-    #     atoms_to_exclude.add(endpoint2)
-        
-    #     self._add_atoms_from_curr_atom(atom1, fragment1_atom_set, fragment1_bond_set, atoms_to_exclude, fragment1_atom_map_num)
-    #     fragment2_atom_map_num = self.atom_map_nums.difference(fragment1_atom_map_num).union(atoms_to_exclude)
-    #     # if there are no new fragments formed, then we just remove edge from the self and return None
-    #     if len(fragment2_atom_map_num) == 1:
-    #         self.bonds.remove(self.get_bond_from_atom_map_num(endpoint1, endpoint2))
-    #         if (endpoint1, endpoint2) in self.bond_map_nums:
-    #             self.bond_map_nums.remove((endpoint1, endpoint2))
-    #         else:
-    #             self.bond_map_nums.remove((endpoint2, endpoint1))
-    #         return None
-
-    #     # otherwise there are 2 distinct and valid fragments, and we seperate as we need
-    #     fragment2_bond_set = self._get_bonds_atom_set(fragment2_atom_map_num)
-    #     fragment2_atom_set = {self.get_atom_from_atom_map_num(atom) for atom in fragment2_atom_map_num}
-        
-    #     self.atoms = fragment1_atom_set
-    #     self.bonds = fragment1_bond_set
-    #     self.atom_map_nums = fragment1_atom_map_num
-    #     self.bond_map_nums = {(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()) for bond in fragment1_bond_set}
-    #     return Fragment(fragment2_atom_set, fragment2_bond_set)
-    
-    def transform(self, reactant_core: ReactionCore, conversion: Dict[int, int], edges_to_not_add: Set[Tuple[int]]) -> None:
+    def transform(self, reactant_core: ReactionCore, conversion: Dict[int, int], edges_to_not_add: Set[Tuple[int]], atom_bond_index_to_add: int) -> None:
         """
         Transform the fragment into its proper reactant given reactant core and conversions
         edges_to_not_add are edges that acted as breaking edges that broke substrate into fragments
         Assume conversion of form conversion[core_map_num] = substrate_map_num
         Assume edges_to_not_add has atom map numbers of core
+        
+        # TODO there is an issue where we are having edges that have the same start and end point, need to fix
         """
         
+        
+        print("######")
+        print("Before Bonds:")
+        print(self.bond_map_nums)
+        print({(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()) for bond in self.bonds})
+        
+        print("Before Atoms")
+        print(self.atom_map_nums)
+        print({atom.GetAtomMapNum() for atom in self.atoms})
+        print("######")
+
         # relevant_reactant_core is part of reaction core that is relevant to current fragment
         relevant_reactant_core = ReactionCore()
         for atom in reactant_core.atoms:
             if atom.GetAtomMapNum() not in conversion and any(other_atom.GetAtomMapNum() in conversion for other_atom in atom.GetNeighbors()):
-                if any(conversion[other_atom.GetAtomMapNum()] in self.atom_map_nums for other_atom in atom.GetNeighbors()):
+                if any(other_atom.GetAtomMapNum() in conversion and conversion[other_atom.GetAtomMapNum()] in self.atom_map_nums for other_atom in atom.GetNeighbors()):
                     relevant_reactant_core.add_atom(atom)
-            elif conversion[atom.GetAtomMapNum()] in self.atom_map_nums:
+            # elif atom.GetAtomMapNum() not in conversion:
+            #     ...
+            elif atom.GetAtomMapNum() in conversion and conversion[atom.GetAtomMapNum()] in self.atom_map_nums:
                 relevant_reactant_core.add_atom(atom)
         
         for bond in reactant_core.bonds:
             endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
             if relevant_reactant_core.check_atom_map_num(endpoint1) and relevant_reactant_core.check_atom_map_num(endpoint2):
                 relevant_reactant_core.add_bond(bond)
-        
         # all changes that need to be made to self are in relevant_reactant_core
         # we use this to see if we need to add, remove, or modify a bond
-        atom_bond_index_to_add = max(self.atom_map_nums)
+        print(conversion)
         for bond in relevant_reactant_core.bonds:
             # if there is a bond in the reactants that is not in the fragment, we add it
             endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
@@ -288,16 +278,35 @@ class Fragment(ReactionCore):
                     # print("Modifying " + str(self_endpoint1) + " and " + str(self_endpoint2))
                     curr_bond.SetBondType(bond.GetBondType())
         
+        print(conversion)
+        print("######")
+        print("After Bonds:")
+        print(self.bond_map_nums)
+        print({(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()) for bond in self.bonds})
+        
+        print("After Atoms")
+        print(self.atom_map_nums)
+        print({atom.GetAtomMapNum() for atom in self.atoms})
+        print("######")
         # now we check for bonds that are in fragment that are not in reactant, if so remove bond
         bonds_to_remove = set()
         sub_to_core = {conversion[key] : key for key in conversion}
-        for bond in self.bonds:
-            endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
+        # print(self.bond_map_nums)
+        for bond in self.bond_map_nums:
+            endpoint1, endpoint2 = bond[0], bond[1]
+            # endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
+            # print((endpoint1, endpoint2))
             if endpoint1 in sub_to_core and endpoint2 in sub_to_core and \
                 not relevant_reactant_core.check_bond_map_num(sub_to_core[endpoint1], sub_to_core[endpoint2]):
                 bonds_to_remove.add(bond)
+                print("Core endpoints: " + str((sub_to_core[endpoint1], sub_to_core[endpoint2])))
+                print("removing" + str((endpoint1, endpoint2)))
         for bond in bonds_to_remove:
-            self.remove_bond(bond)
+            to_remove = self.get_bond_from_atom_map_num(bond[0], bond[1])
+            if to_remove is not None:
+                self.remove_bond(to_remove)
+        
+        return atom_bond_index_to_add
 
     def _add_bond_from_core(self, core_bond: Bond, core_to_sub: Dict[int, int], next_index_to_add) -> int:
         """
@@ -305,9 +314,11 @@ class Fragment(ReactionCore):
         Returns next_index_to_add + however many atoms added
         """
         atom1, atom2 = core_bond.GetBeginAtom(), core_bond.GetEndAtom()
-        
+    
         # check if either atom is not in self:
         num_added = 0
+        # print(core_to_sub)
+        # print(self.atom_map_nums)
         if atom1.GetAtomMapNum() not in core_to_sub:
             core_to_sub[atom1.GetAtomMapNum()] = next_index_to_add + num_added + 1
             # print("From " + str(atom1.GetAtomMapNum()) + " to " + str(next_index_to_add + num_added + 1))
@@ -325,8 +336,9 @@ class Fragment(ReactionCore):
         else:
             atom2.SetAtomMapNum(core_to_sub[atom2.GetAtomMapNum()])
         
-        # print("Adding " + str(atom1.GetAtomMapNum()) + " and " + str(atom2.GetAtomMapNum()))
+        print("Adding " + str(atom1.GetAtomMapNum()) + " and " + str(atom2.GetAtomMapNum()))
         self.add_bond(core_bond)
+        print((core_bond.GetBeginAtom().GetAtomMapNum(), core_bond.GetEndAtom().GetAtomMapNum()))
         return next_index_to_add + num_added
     
     def _find_changed_props(self, core_bond: Bond, fragment_bond: Bond) -> dict:
@@ -367,17 +379,13 @@ class Fragment(ReactionCore):
                     and self.check_bond_map_num(other_atom_map_num, curr_atom.GetAtomMapNum()) and \
                         find_bond_set(other_atom_map_num, curr_atom.GetAtomMapNum(), bonds_so_far) is None:
                              bonds_so_far.add(bond)
+    
+    def _atom_connected_to_relevant(self, atom: Atom, atoms_seen_so_far: Set[int], conversion: Dict[int, int]) -> bool:
         
-    # def _get_bonds_atom_set(self, atoms: Set[int]) -> Set[Bond]:
-    #     """
-    #     Returns a set of Bond objects that only contain the atoms in atom
-    #     Note atoms is a set of atom map numbers
-    #     """
-        
-    #     bonds_so_far = set()
-    #     for bond in self.bonds:
-    #         endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
-    #         if endpoint1 in atoms and endpoint2 in atoms:
-    #             bonds_so_far.add(bond)
-        
-    #     return bonds_so_far
+        atoms_seen_so_far.add(atom.GetAtomMapNum())
+        for neighbour in atom.GetNeighbors():
+            if neighbour.GetAtomMapNum() in conversion and conversion[neighbour.GetAtomMapNum()] in self.atom_map_nums:
+                return True
+            elif neighbour.GetAtomMapNum() not in atoms_seen_so_far:
+                self._check_if_atom_connected_to_any_in_conversion(neighbour, atoms_seen_so_far, conversion)
+        return False

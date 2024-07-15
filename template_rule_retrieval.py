@@ -56,17 +56,23 @@ def get_reactants_for_substrate(substrate: str, reactant_core: ReactionCore, pro
     # we can figure out where to break bonds to generate fragments in core area
     core_fragment_edges = set()
     for bond in product_core.bonds:
-        if not reactant_core.check_bond(bond):
+        atom1, atom2 = bond.GetBeginAtom(), bond.GetEndAtom()
+        if not reactant_core.check_bond(bond) and reactant_core.check_atom(atom1) and reactant_core.check_atom(atom2): # and reactant_core.check_atom(atom1) and reactant_core.check_atom(atom2):
              core_fragment_edges.add((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))
     core_to_substrate = {subgraphs[0][key]: key for key in subgraphs[0]}
     substrate_fragment_edges = {(core_to_substrate[edge[0]], core_to_substrate[edge[1]]) for edge in core_fragment_edges}
+    # print(substrate_fragment_edges)
     fragment = Fragment({atom for atom in substrate_mol.GetAtoms()}, {bond for bond in substrate_mol.GetBonds()})
     fragments = fragment.fragment_with_multiple_edges(substrate_fragment_edges)
     # use the reaction core to make changes to different fragments
-    for fragment in fragments:
-        fragment.transform(reactant_core, core_to_substrate, core_fragment_edges)
     
-    return {fragment.get_mol() for fragment in fragments}
+    next_index_to_add = max({atom.GetAtomMapNum() for atom in substrate_mol.GetAtoms()})
+    reactants = set()
+    for fragment in fragments:
+        next_index_to_add = fragment.transform(reactant_core, core_to_substrate, core_fragment_edges, next_index_to_add)
+        reactants.add(fragment.get_mol())
+    
+    return reactants
 
 
 if __name__ == "__main__":
@@ -85,7 +91,10 @@ if __name__ == "__main__":
     # wiley38_table_2
     core = ce.get_reaction_core(["IC1CCOCC1", "OC(C1=CC([R])=CC=C1)=O"], ["O=C(C1CCOCC1)C2=CC=CC([R])=C2"])
     product_core = ce.extend_reaction_core(core[1], core[2], core[0])
-    mols = get_reactants_for_substrate("O=C(C1CCOCC1)C2=CC=C(C)C=C2", core[0], product_core)
+    
+    highlight_reaction_core(core[0].get_mol(), set(), set(), "reactant_core.png")
+    highlight_reaction_core(product_core.get_mol(), set(), set(), "product_core.png")
+    mols = get_reactants_for_substrate("O=C(C1CCOCC1)C2=CC=C(C(C)(C)C)C=C2", core[0], product_core)
 
     # product_core = ce.extend_reaction_core(core[1], core[2], core[0])
     # highlight_reaction_core(core[0].get_mol(), set(), set(), "extended_reactant_core.png")
