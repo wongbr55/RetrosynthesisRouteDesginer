@@ -234,10 +234,10 @@ class Fragment(ReactionCore):
         relevant_reactant_core = ReactionCore()
         for atom_map in reactant_core.atom_map_nums:
             atom = reactant_core.get_atom_from_atom_map_num(atom_map)
-            print("Considering " + str(atom_map))
+            # print("Considering " + str(atom_map))
             if atom is not None and atom.GetAtomMapNum() not in conversion and any(other_atom.GetAtomMapNum() in conversion for other_atom in atom.GetNeighbors()):
                 if any(other_atom.GetAtomMapNum() in conversion and conversion[other_atom.GetAtomMapNum()] in self.atom_map_nums for other_atom in atom.GetNeighbors()):
-                    print("Adding " + str(atom.GetAtomMapNum()))
+                    # print("Adding " + str(atom.GetAtomMapNum()))
                     relevant_reactant_core.add_atom(atom)
             # elif atom.GetAtomMapNum() not in conversion:
             #     ...
@@ -256,22 +256,24 @@ class Fragment(ReactionCore):
         # all changes that need to be made to self are in relevant_reactant_core
         # we use this to see if we need to add, remove, or modify a bond
         # print(conversion)
-        for bond in relevant_reactant_core.bonds:
+        for bond_map in relevant_reactant_core.bond_map_nums:
             # if there is a bond in the reactants that is not in the fragment, we add it
-            endpoint1, endpoint2 = bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()
-            if not endpoint1 in conversion or not endpoint2 in conversion and \
+            endpoint1, endpoint2 = bond_map[0], bond_map[1]
+            bond = reactant_core.get_bond_from_atom_map_num(endpoint1, endpoint2)
+            if bond is not None and not endpoint1 in conversion or not endpoint2 in conversion and \
                 (endpoint1, endpoint2) not in edges_to_not_add and (endpoint2, endpoint1) not in edges_to_not_add:
             # if (endpoint1, endpoint2) not in self.bond_map_nums and (endpoint2, endpoint1) not in self.bond_map_nums:
                 atom_bond_index_to_add = self._add_bond_from_core(bond, conversion, atom_bond_index_to_add)
             # otherwise if it is in the fragment but is not matching, we try to modify it
-            elif (endpoint1, endpoint2) not in edges_to_not_add and (endpoint2, endpoint1) not in edges_to_not_add:
+            elif bond is not None and (endpoint1, endpoint2) not in edges_to_not_add and (endpoint2, endpoint1) not in edges_to_not_add:
                 self_endpoint1, self_endpoint2 = conversion[endpoint1], conversion[endpoint2]
                 curr_bond = self.get_bond_from_atom_map_num(self_endpoint1, self_endpoint2)
                 if curr_bond is None:
                     atom_bond_index_to_add = self._add_bond_from_core(bond, conversion, atom_bond_index_to_add)
-                elif curr_bond.GetBondType() != bond.GetBondType():
+                else:
+                    if curr_bond.GetBondType() != bond.GetBondType():
                     # print("Modifying " + str(self_endpoint1) + " and " + str(self_endpoint2))
-                    curr_bond.SetBondType(bond.GetBondType())
+                        curr_bond.SetBondType(bond.GetBondType())
 
         # now we check for bonds that are in fragment that are not in reactant, if so remove bond
         bonds_to_remove = set()
@@ -317,9 +319,9 @@ class Fragment(ReactionCore):
         else:
             atom2.SetAtomMapNum(core_to_sub[atom2.GetAtomMapNum()])
         
-        print("Adding " + str(atom1.GetAtomMapNum()) + " and " + str(atom2.GetAtomMapNum()))
+        # print("Adding " + str(atom1.GetAtomMapNum()) + " and " + str(atom2.GetAtomMapNum()))
         self.add_bond(core_bond)
-        print((core_bond.GetBeginAtom().GetAtomMapNum(), core_bond.GetEndAtom().GetAtomMapNum()))
+        # print((core_bond.GetBeginAtom().GetAtomMapNum(), core_bond.GetEndAtom().GetAtomMapNum()))
         return next_index_to_add + num_added
     
     def _find_changed_props(self, core_bond: Bond, fragment_bond: Bond) -> dict:
