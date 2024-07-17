@@ -61,15 +61,7 @@ def get_reactants(substrate: str, reactant_smiles: List[str], product_smiles: Li
     
     # new_products = foward_reaction_template.RunReactants(Chem.MolFromSmiles("O=C(C1=CC=CC=C1/C=C/C2=CC=CC=C2)NC"))[0]
     reactants_for_substrate = backwards_reaction_template.RunReactants(products_without_r_groups)[0]
-    
-    # FOR DEBUGGING
-    # counter = 1
-    # for reactant in reactants_for_substrate:
-    #     Chem.SanitizeMol(reactant)
-    #     highlight_reaction_core(reactant, set(), set(), "new_reactant" + str(counter) + ".png")
-    #     counter += 1
-    
-    return [Chem.MolToSmiles(Chem.SanitizeMol(mol)) for mol in reactants_for_substrate]
+    return [Chem.MolToSmiles(mol) for mol in reactants_for_substrate]
 
 
 def get_mol_without_r_group(mol: Mol) -> Mol:
