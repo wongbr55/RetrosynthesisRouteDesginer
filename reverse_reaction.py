@@ -11,22 +11,38 @@ from utils import highlight_reaction_core
 
 from rxnmapper import RXNMapper
 
-# VALENCY_TABLE = {
-#         1: 1,  # H
-#         6: 4,  # C
-#         7: 3,  # N
-#         8: 2,  # O
-#         9: 1,  # F
-#         15: 3,  # P
-#         16: 2,  # S
-#         17: 1,  # Cl
-#     }
 
 def get_reactants(substrate: str, reactant_smiles: List[str], product_smiles: List[str], debug: bool=False) -> Set[Mol]:
     """
     Uses rdkit to get the possible reactants for a given reaction using the template reactants and products strings
     """
+    reaction_smarts = _get_smarts(reactant_smiles, product_smiles)
+   # get the foward reaction
+    foward_reaction_template = AllChem.ReactionFromSmarts(reaction_smarts)    
+    backwards_reaction_template = _create_backwards_reaction(foward_reaction_template, debug)
+    # run the products as the reactants for the backwards reaction
+    products_without_r_groups = [Chem.MolFromSmiles(Chem.CanonSmiles(smile)) for smile in product_smiles if "R" not in smile and "X" not in smile] \
+                                + [Chem.AddHs(Chem.MolFromSmiles(Chem.CanonSmiles(substrate)))]
+    if debug:
+        counter = 1
+        for product in products_without_r_groups:
+            highlight_reaction_core(product, set(), set(), "substrate_product" + str(counter) + ".png")
+            counter += 1
+    # get the reactants for the current substrate
+    reactants_for_substrate = backwards_reaction_template.RunReactants(products_without_r_groups)[0]
+    if debug:
+        counter = 1
+        for mol in reactants_for_substrate:
+            highlight_reaction_core(mol, set(), set(), "new_reactant" + str(counter) + ".png")
+            counter += 1
 
+    return [Chem.MolToSmiles(mol) for mol in reactants_for_substrate]
+
+
+def _get_smarts(reactant_smiles: List[str], product_smiles: List[str]) -> str:
+    """
+    Gets the SMARTS reaction string for reactant_smiles and product_smiles
+    """
     # process the string to remove the R group
     replaced_r_group_reactant = [re.sub(r'R\d+', 'Zn', smile) for smile in reactant_smiles]
     replaced_r_group_product = [re.sub(r'R\d+', 'Zn', smile) for smile in product_smiles]
@@ -34,47 +50,35 @@ def get_reactants(substrate: str, reactant_smiles: List[str], product_smiles: Li
         replaced_r_group_reactant = [re.sub(r'R+', 'Zn', smile) for smile in replaced_r_group_reactant]
         replaced_r_group_product = [re.sub(r'R+', 'Zn', smile) for smile in replaced_r_group_product]
     
+    # replace X groups
     replaced_x_group_reactant = [re.sub(r'X+', 'Cu', smile) for smile in replaced_r_group_reactant]
     replaced_x_group_product = [re.sub(r'X+', 'Cu', smile) for smile in replaced_r_group_product]
-    
-    canon_reactant_smiles = [Chem.CanonSmiles(smile) for smile in replaced_x_group_reactant]
-    canon_product_smiles = [Chem.CanonSmiles(smile) for smile in replaced_x_group_product]
-    
-    # removed_r_group_reactant_mols = [get_mol_without_r_group(Chem.MolFromSmiles(mol)) for mol in replaced_r_group_reactant]
-    # removed_r_group_product_mols = [get_mol_without_r_group(Chem.MolFromSmiles(mol)) for mol in replaced_r_group_product]
-
-    # reactants_smarts = '.'.join([Chem.MolToSmiles(mol) for mol in removed_r_group_reactant_mols])
-    # products_smarts = '.'.join([Chem.MolToSmiles(mol) for mol in removed_r_group_product_mols])
-    reactants_smarts = '.'.join([mol for mol in canon_reactant_smiles])
-    products_smarts = '.'.join([mol for mol in canon_product_smiles])
+        
+    reactants_smarts = '.'.join([mol for mol in replaced_x_group_reactant])
+    products_smarts = '.'.join([mol for mol in replaced_x_group_product])
     reaction_smarts_without_atom_map = reactants_smarts + ">>" + products_smarts
     
     # add atom map nums to reaction smarts
     rxn_mapper = RXNMapper()
     reaction_smarts = rxn_mapper.get_attention_guided_atom_maps([reaction_smarts_without_atom_map])[0]["mapped_rxn"]
-    reaction_smarts = reaction_smarts.replace("Cu", "*")
-    # print(reaction_smarts)
-    # get the fowards and backwards reactions
-    # also need to remove zinc as it was the placeholder for the R groups
+    return reaction_smarts.replace("Cu", "*")
+
+
+def _create_backwards_reaction(foward_reaction_template: ChemicalReaction, debug: bool) -> ChemicalReaction:
+    """
+    Takes the foward reaction template and creates the backwards one while preprocessing the reactants and products
+    """
+    # change query parameters to allow for better structure match
+    qp = Chem.AdjustQueryParameters()
+    qp.makeDummiesQueries = True
+    qp.adjustDegree = False
     
-    # we check the atom map numbers of the reactants and products to ensure no atom is left out
-    foward_reaction_template = AllChem.ReactionFromSmarts(reaction_smarts)
-    try:
-        AllChem.SanitizeRxn(foward_reaction_template, AllChem.SanitizeFlags.SANITIZE_MERGEHS)
-    except:
-        pass
-    
+    # create the backwards reaction and label atoms with map numbers that are left unmapped
     next_index_to_add = 0
     for reactant in foward_reaction_template.GetReactants():
         next_index_to_add = max(next_index_to_add, max({atom.GetAtomMapNum() for atom in reactant.GetAtoms() if atom.GetAtomicNum != 30}))
     for product in foward_reaction_template.GetProducts():
         next_index_to_add = max(next_index_to_add, max({atom.GetAtomMapNum() for atom in product.GetAtoms() if atom.GetAtomicNum != 30}))
-    
-    # change query parameters to allow for better structure match
-    qp = Chem.AdjustQueryParameters()
-    qp.makeDummiesQueries = True
-    qp.adjustDegree = False
-    qp.aromatizeIfPossible = True
     
     backwards_reaction_template = ChemicalReaction()
     for i in range(0, foward_reaction_template.GetNumReactantTemplates()):
@@ -83,7 +87,7 @@ def get_reactants(substrate: str, reactant_smiles: List[str], product_smiles: Li
             if atom.GetAtomMapNum() == 0:
                 atom.SetAtomMapNum(next_index_to_add + 1)
                 next_index_to_add += 1
-        new_product = get_mol_without_r_group(reactant)
+        new_product = _get_mol_without_r_group(Chem.AddHs(reactant, explicitOnly=True))
         modified_product = Chem.AdjustQueryProperties(new_product, qp)
         backwards_reaction_template.AddProductTemplate(modified_product)
         if debug:
@@ -94,68 +98,18 @@ def get_reactants(substrate: str, reactant_smiles: List[str], product_smiles: Li
             if atom.GetAtomMapNum() == 0:
                 atom.SetAtomMapNum(next_index_to_add + 1)
                 next_index_to_add += 1
-
-        new_reactant = get_mol_without_r_group(product)
+        new_reactant = _get_mol_without_r_group(Chem.AddHs(product, explicitOnly=True))
         modified_reactant = Chem.AdjustQueryProperties(new_reactant, qp)
         backwards_reaction_template.AddReactantTemplate(modified_reactant)
         if debug:
             highlight_reaction_core(modified_reactant, set(), set(), "product_template" + str(i) + ".png")
-
-    try:
-        AllChem.SanitizeRxn(backwards_reaction_template, AllChem.SanitizeFlags.SANITIZE_MERGEHS)
-    except:
-        pass
-
-    # run the products as the reactants for the backwards reaction
-    products_without_r_groups = [Chem.MolFromSmiles(Chem.CanonSmiles(smile)) for smile in product_smiles if "R" not in smile and "X" not in smile] \
-                                + [Chem.MolFromSmiles(Chem.CanonSmiles(substrate))]
-    if debug:
-        counter = 1
-        for product in products_without_r_groups:
-            highlight_reaction_core(product, set(), set(), "substrate_product" + str(counter) + ".png")
-            counter += 1
     
-    reactants_for_substrate = backwards_reaction_template.RunReactants(products_without_r_groups)[0]
-    if debug:
-        counter = 1
-        for mol in reactants_for_substrate:
-            highlight_reaction_core(mol, set(), set(), "new_reactant" + str(counter) + ".png")
-            counter += 1
-    
-    smiles = []
-    for mol in reactants_for_substrate:
-        
-        for atom in mol.GetAtoms():
-            if atom.GetSymbol() == 'N' and atom.GetIsAromatic() and atom.GetNumImplicitHs() > 0:
-                atom.SetNumExplicitHs(1)
-                atom.SetNoImplicit(True)
-        try:
-            Chem.SanitizeMol(mol)
-            smiles.append(Chem.MolToSmiles(mol))
-        except:
-            smiles.append(Chem.MolToSmiles(mol))       
-        # mol = Chem.AddHs(mol, explicitOnly=True)
-        # new_mol = EditableMol(Chem.Mol())
-        # map_num_to_idx = {}
-        # for atom in mol.GetAtoms():
-        #     new_atom = Atom(atom.GetAtomicNum())
-        #     map_num_to_idx[atom.GetIdx()] = new_mol.AddAtom(new_atom)
-        # for bond in mol.GetBonds():
-        #     atom_num1, atom_num2 = bond.GetBeginAtom().GetIdx(), bond.GetEndAtom().GetIdx()
-        #     idx1, idx2 = map_num_to_idx[atom_num1], map_num_to_idx[atom_num2]
-        #     new_mol.AddBond(idx1, idx2, bond.GetBondType())
-        # new_mol = new_mol.GetMol()
-        
-        # smiles.append(Chem.MolToSmiles(new_mol))
-            
-        
-    return smiles
+    return backwards_reaction_template
 
 
-def get_mol_without_r_group(mol: Mol) -> Mol:
+def _get_mol_without_r_group(mol: Mol) -> Mol:
     """
     Creates a new Mol object from mol without the R groups, or in this case without zinc
-    TODO use next_index_to_add paramater to deal with missing H groups
     """
     # assemble new_mol from mol and do not add any atoms that are zinc (R group place holder)
     new_mol = EditableMol(Mol())
@@ -171,26 +125,11 @@ def get_mol_without_r_group(mol: Mol) -> Mol:
         if bond.GetBeginAtom().GetAtomicNum() != 30 and bond.GetEndAtom().GetAtomicNum() != 30:
             idx1, idx2 = mol_to_new_mol[atom_num1], mol_to_new_mol[atom_num2]
             new_mol.AddBond(idx1, idx2, bond.GetBondType())
-        # elif bond.GetBeginAtom().GetAtomicNum() == 30 or bond.GetEndAtom().GetAtomicNum() == 30:
-        #     new_r_group = Atom(0)
-        #     if bond.GetBeginAtom().GetAtomicNum() == 30 and bond.GetEndAtom().GetAtomicNum() != 6:
-        #         new_idx = new_mol.AddAtom(new_r_group)
-        #         new_r_group.SetAtomMapNum(bond.GetBeginAtom().GetAtomMapNum())
-        #         idx2 = mol_to_new_mol[atom_num2]
-        #         new_mol.AddBond(new_idx, idx2, bond.GetBondType())
-        #     elif bond.GetEndAtom().GetAtomicNum() == 30 and bond.GetBeginAtom().GetAtomicNum() != 6:
-        #         new_idx = new_mol.AddAtom(new_r_group)
-        #         new_r_group.SetAtomMapNum(bond.GetEndAtom().GetAtomMapNum())
-        #         idx1 = mol_to_new_mol[atom_num1]
-        #         new_mol.AddBond(new_idx, idx1, bond.GetBondType())
             
-    try:
-        new_mol = Chem.SantizeMol(new_mol.GetMol())
-    except:
-        new_mol = new_mol.GetMol()
+    new_mol = new_mol.GetMol()
     return new_mol
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     
     # wiley2_scheme_3
     # PASSES
@@ -199,7 +138,7 @@ if __name__ == "__main__":
 
     # wiley38_table2
     # PASSES
-    # print(get_reactants("O=C(C1CCOCC1)C2=CC=C(C)C=C2", ["IC1CCOCC1", "OC(C1=CC([R])=CC=C1)=O"], ["O=C(C1CCOCC1)C2=CC=CC([R])=C2"]))
+    # print(get_reactants("O=C(C1CCOCC1)C2=CC=C(C)C=C2", ["IC1CCOCC1", "OC(C1=C([R])C([R])=C([R])C([R])=C1[R])=O"], ["O=C(C1=C([R])C([R])=C([R])C([R])=C1[R])C2CCOCC2"], True))
     
     # wiley6_scheme_2
     # PASSES
@@ -207,7 +146,7 @@ if __name__ == "__main__":
     
     # RSC18_scheme_2
     # DOES NOT PRODUCE VALID SMILES AND CANNOT SANITIZE, WORKS SOMETIMES
-    # print(get_reactants("O=C(C1C)N([H])C2=C1C=CC=C2", ["[R1]N(C=C1[R2])C2=C1C=C([R3])C=C2"], ["[R1]N(C(C1[R2])=O)C2=C1C=C([R3])C=C2"], True))
+    # print(get_reactants("O=C(C1CC)N([H])C2=C1C=CC=C2", ["[R1]N(C=C1[R2])C2=C1C=C([R3])C=C2"], ["[R1]N(C(C1[R2])=O)C2=C1C=C([R3])C=C2"], True))
     
     # wiley16_scheme_2
     # PASSES
@@ -220,7 +159,7 @@ if __name__ == "__main__":
     # product_core_smiles = [smile.replace("Cu", "X") for smile in product_core_smiles]
     # print(get_reactants("CC1=CC2=C(OC(N3CCOCC3)=N2)C=C1", reactant_core_smiles, product_core_smiles))
 
-    # print(get_reactants("CC1=CC2=C(OC(N3CCOCC3)=N2)C=C1", ["[H]C1=NC2=C(C=CC=C2)[X]1", "O1CCNCC1"], ["C12=C(N=C([X]2)N3CCOCC3)C=CC=C1"]))
+    # print(get_reactants("CC1=CC2=C(OC(N3CCOCC3)=N2)C=C1", ["[H]C1=NC2=C([X]1)C=CC=C2", "O1CCNCC1"], ["C12=C(C=CC=C2)N=C(N3CCOCC3)[X]1"], True))
     
     
     # rxn = AllChem.ReactionFromSmarts('[c:1][#0].[#0][*:2]>>[c:1]-[*:2]')
@@ -244,7 +183,7 @@ if __name__ == "__main__":
     
     # RSC22_table_2
     # UNKOWN, PERHAPS IT IS WITH N BEING BONDED TO 2 HYDROGENS?
-    print(get_reactants("N12C=CC=CC1=NC(C3=CC=C(C4=CC=CC=C4)C=C3)=C2N5C=NC=C5", ["[H]C1=C(N=C2N1C=CC=C2)C3=CC=C(C=C3)[R]", "[R2]N[R1]"], ["[R]C1=CC=C(C2=C(N3C=CC=CC3=N2)N([R2])[R1])C=C1"], True))
+    # print(get_reactants("N12C=CC=CC1=NC(C3=CC=C(C4=CC=CC=C4)C=C3)=C2N5C=NC=C5", ["[H]C1=C(N=C2N1C=CC=C2)C3=CC=C(C=C3)[R]", "[R2]N[R1]"], ["[R]C1=CC=C(C2=C(N3C=CC=CC3=N2)N([R2])[R1])C=C1"], True))
     
     # wiley30_table_3
     # DOES NOT ALWAYS FOLLOW REACTION TEMPLATE
