@@ -9,6 +9,24 @@ from rdkit.Chem.rdChemReactions import ChemicalReaction
 from typing import List, Set, Tuple, Iterable
 
 
+
+REMOVE_BOND_FLAG = "REMOVE"
+ADD_BOND_FLAG = "ADD"
+MODIFY_BOND_FLAG = "MODIFY"
+
+
+def create_atom(atom: Atom) -> Atom:
+    """
+    Creates a new Atom object from atom with the same properties
+    This is done to clear all bonds and neighbours from the Atom object
+    """
+    new_atom = Atom(atom.GetAtomicNum())
+    new_atom.SetAtomMapNum(atom.GetAtomMapNum())
+    new_atom.SetFormalCharge(atom.GetFormalCharge())
+    new_atom.SetHybridization(atom.GetHybridization())
+    
+    return new_atom
+
 def find_atom(atom_map_num: int, mols: Iterable[Mol]) -> Atom:
     """
     Finds Atom object that has the same atom map number as atom_map_num
@@ -19,6 +37,25 @@ def find_atom(atom_map_num: int, mols: Iterable[Mol]) -> Atom:
                 return atom
     return None
 
+def find_atom_index(atom_map_num: int, mols: Iterable[Mol]) -> Atom:
+    """
+    Finds Atom object that has the same atom map number as atom_map_num
+    """
+    for i in range(0, len(mols)):
+        for atom in mols[i].GetAtoms():
+            if atom.GetAtomMapNum() == atom_map_num:
+                return i
+    return -1
+
+def find_atom_index_in_mol(atom_map_num: int, mols: Iterable[Mol]) -> Atom:
+    """
+    Finds Atom object that has the same atom map number as atom_map_num
+    """
+    for i in range(0, len(mols)):
+        for atom in mols[i].GetAtoms():
+            if atom.GetAtomMapNum() == atom_map_num:
+                return atom.GetIdx()
+    return -1
 
 def find_bond_set(index1: int, index2: int, bonds: Iterable[Bond]) -> Bond:
     for bond in bonds:
