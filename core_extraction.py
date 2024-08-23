@@ -7,7 +7,7 @@ from rdkit.Chem.rdchem import Mol, Atom, Bond, BondType, EditableMol
 from rdkit.Chem import Draw
 from rdkit.Chem.rdChemReactions import ChemicalReaction
 
-from typing import List, Set, Tuple
+from typing import List, Set, Tuple, Dict
 
 from rxnmapper import RXNMapper
 import networkx as nx
@@ -15,15 +15,15 @@ from networkx import Graph
 
 import re
 
-from classes.partial_molecule import ReactionCore
-from utils import find_atom, find_bond, highlight_reaction_core, create_atom, find_atom_index, REMOVE_BOND_FLAG, ADD_BOND_FLAG, MODIFY_BOND_FLAG
+from classes.partial_molecule import Rule, ReactionCore
+from utils import find_atom, find_bond, highlight_reaction_core, create_atom, find_atom_index, generate_graph, REMOVE_BOND_FLAG, ADD_BOND_FLAG, MODIFY_BOND_FLAG
 
 ##################################################################################################
 # CORE EXTRACTION
 ##################################################################################################
 
 
-def get_reaction_core(reactants_smiles: List[str], products_smiles: List[str]) ->Tuple[List[Mol], List[Mol], List[Mol]]:
+def get_reaction_core(reactants_smiles: List[str], products_smiles: List[str]) ->Tuple[List[Mol], List[Mol], List[Mol], List[Rule]]:
     """
     Runs the full reaction core
     Returns a tuple:
@@ -59,7 +59,7 @@ def get_reaction_core(reactants_smiles: List[str], products_smiles: List[str]) -
     return get_reaction_core_with_smarts(reaction_smarts)
 
 
-def get_reaction_core_with_smarts(reaction_smarts: str) -> Tuple[List[Mol], List[Mol], List[Mol]]:
+def get_reaction_core_with_smarts(reaction_smarts: str) -> Tuple[List[Mol], List[Mol], List[Mol], List[Rule]]:
     """
     Gets the reaction core given the reaction smarts
     Essentially just creates ChemicalReaction object and passes to get_reaction_core_helper
@@ -81,31 +81,12 @@ def get_reaction_core_with_smarts(reaction_smarts: str) -> Tuple[List[Mol], List
         next_index_to_add = max(next_index_to_add, max({atom.GetAtomMapNum() for atom in mol.GetAtoms()}))
     for mol in product_mol:
         next_index_to_add = max(next_index_to_add, max({atom.GetAtomMapNum() for atom in mol.GetAtoms()}))
-    # print("Next index to add: " + str(next_index_to_add))
-    counter = 1
-    for mol in reactant_mol:
-        for atom in mol.GetAtoms():
-            if atom.GetAtomMapNum() == 0:
-                atom.SetAtomMapNum(next_index_to_add + 1)
-                next_index_to_add += 1
-                # print("Next index to add: " + str(next_index_to_add))
-        # highlight_reaction_core(mol, set(), set(), "reactant_template" + str(counter) + ".png")
-        counter += 1
-    counter = 1
-    for mol in product_mol:
-        for atom in mol.GetAtoms():
-            if atom.GetAtomMapNum() == 0:
-                atom.SetAtomMapNum(next_index_to_add + 1)
-                next_index_to_add += 1
-        # highlight_reaction_core(mol, set(), set(), "product_template" + str(counter) + ".png")
-        counter += 1
-    
     # get core
-    core = get_reaction_core_helper(reactant_mol, product_mol)
-    return core, reactant_mol, product_mol
+    core, rules = get_reaction_core_helper(reactant_mol, product_mol, next_index_to_add)
+    return core, reactant_mol, product_mol, rules
 
 
-def get_reaction_core_helper(reactant_molecule_list: List[Mol], product_mols: List[Mol]) -> List[Mol]:
+def get_reaction_core_helper(reactant_molecule_list: List[Mol], product_mols: List[Mol], next_index_to_add: int) -> Tuple[List[Mol], List[Rule]]:
     """
     Identifies the reaction core of the reactants
     Assume RXN property for reactant and product are set
@@ -115,14 +96,16 @@ def get_reaction_core_helper(reactant_molecule_list: List[Mol], product_mols: Li
 
     # get all the reaction cores
     reaction_cores = []
+    rules = []
     for reactant in reactant_molecule_list:
-        new_reactant_mol = get_reaction_core_for_single_reactant(reactant, product_mols)
+        new_reactant_mol, curr_rules, next_index_to_add = get_reaction_core_for_single_reactant(reactant, product_mols, next_index_to_add, rules)
         reaction_cores.append(new_reactant_mol)
+        rules.extend(curr_rules)
+    
+    return [mol.GetMol() for mol in reaction_cores], rules
 
-    return [mol.GetMol() for mol in reaction_cores]
 
-
-def get_reaction_core_for_single_reactant(reaction_molecule: Mol, products: List[Mol]) -> EditableMol:
+def get_reaction_core_for_single_reactant(reaction_molecule: Mol, products: List[Mol], next_index_to_add: int, rules_so_far: List[Rule]) -> Tuple[EditableMol, List[Rule], int]:
     """
     Gets the reaction core for a single molecule
     Returns a tuple containing the changed atoms and bonds that represent the reaction core
@@ -133,55 +116,122 @@ def get_reaction_core_for_single_reactant(reaction_molecule: Mol, products: List
 
     # changed_atoms = set()
     # changed_bonds = set()
+    rules = []
     changed_atom_map_num = set()
     new_reactant_mol = EditableMol(Mol())
     reaction_to_core = {}
+    atoms_to_add = []
     for atom in reaction_molecule.GetAtoms():
         index = atom.GetAtomMapNum()
         for product in products:
             for prod_atom in product.GetAtoms():
                 # once we found the matching atom, we compare attributes
-                if prod_atom.GetAtomMapNum() == index and not compare_props(atom, prod_atom):
-                    new_atom = create_atom(atom)
-                    reaction_to_core[prod_atom.GetAtomMapNum()] = new_reactant_mol.AddAtom(new_atom)
-                    changed_atom_map_num.add(atom.GetAtomMapNum())
+                curr_rules, next_index_to_add, curr_atoms_to_add = compare_props(atom, prod_atom, rules + rules_so_far, next_index_to_add)
+                if prod_atom.GetAtomMapNum() == index and curr_rules != []:
+                    # new_atom = create_atom(atom)
+                    # reaction_to_core[prod_atom.GetAtomMapNum()] = new_reactant_mol.AddAtom(new_atom)
+                    # changed_atom_map_num.add(atom.GetAtomMapNum())
+                    rules.extend(curr_rules)
+                atoms_to_add.extend(curr_atoms_to_add)
 
+    # print({atom.GetAtomMapNum() for atom in atoms_to_add})
+    
+    # for to_add_atom in atoms_to_add:
+    #     if to_add_atom.GetAtomMapNum() not in changed_atom_map_num and to_add_atom.GetAtomMapNum() in {atom.GetAtomMapNum() for atom in reaction_molecule.GetAtoms()}:
+    #         new_atom = create_atom(atom)
+    #         reaction_to_core[to_add_atom.GetAtomMapNum()] = new_reactant_mol.AddAtom(new_atom)
+    #         changed_atom_map_num.add(atom.GetAtomMapNum())
+    for rule in rules:
+        if rule.start_atom not in changed_atom_map_num: # and rule.start_atom in {atom.GetAtomMapNum() for atom in reaction_molecule.GetAtoms()}:
+            new_atom = create_atom(rule.start_atom_object)
+            reaction_to_core[rule.start_atom] = new_reactant_mol.AddAtom(new_atom)
+            changed_atom_map_num.add(atom.GetAtomMapNum())
+        if rule.end_atom not in changed_atom_map_num: # and rule.end_atom in {atom.GetAtomMapNum() for atom in reaction_molecule.GetAtoms()}:
+            new_atom = create_atom(rule.end_atom_object)
+            reaction_to_core[rule.end_atom] = new_reactant_mol.AddAtom(new_atom)
+            changed_atom_map_num.add(atom.GetAtomMapNum())
+            
     for bond in reaction_molecule.GetBonds():
         if bond.GetBeginAtom().GetAtomMapNum() in changed_atom_map_num and bond.GetEndAtom().GetAtomMapNum() in changed_atom_map_num:
             # changed_bonds.add((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))
             index1, index2 = reaction_to_core[bond.GetBeginAtom().GetAtomMapNum()], reaction_to_core[bond.GetEndAtom().GetAtomMapNum()]
             new_reactant_mol.AddBond(index1, index2, bond.GetBondType())
+    return new_reactant_mol, rules, next_index_to_add
 
-    return new_reactant_mol
 
-
-def compare_props(reactant_atom: Atom, product_atom: Atom):
+def compare_props(reactant_atom: Atom, product_atom: Atom, rules_so_far: List[Rule], next_index_to_add: int) -> Tuple[List[Rule], int]:
     """
     Compares a fixed atom when it is in the reactant and when it is in the product
-    Returns boolean (whether atoms are the same or different)
+    Returns set of rules to transform product atom into reactant atom
     :param reactant_atom:
     :param product_atom:
     :return:
     """
-
-    if reactant_atom.GetDegree() != product_atom.GetDegree():
-        return False
-    if reactant_atom.GetFormalCharge() != product_atom.GetFormalCharge():
-        return False
-    if reactant_atom.GetNumRadicalElectrons() != product_atom.GetNumRadicalElectrons():
-        return False
-
+    rules = []
     reactant_atom_neighbors = {atom.GetAtomMapNum() for atom in reactant_atom.GetNeighbors()}
     product_atom_neighbors = {atom.GetAtomMapNum() for atom in product_atom.GetNeighbors()}
-    for reactant_num in reactant_atom_neighbors:
-        if reactant_num not in product_atom_neighbors:
-            return False
-
+    atoms_to_add = []
+   
+    # TODO implementet cases of leaving group here
+    # if the reactant atom is left unmapped, then we know it is a leaving group, thus we add every bond around it
+    # if reactant_atom.GetAtomMapNum() == 0:
+    #     # first we set the atom map number of reactant_atom
+    #     reactant_atom.SetAtomMapNum(next_index_to_add + 1)
+    #     next_index_to_add += 1
+    #     # then we add all other atoms around it 
+    #     for bond in reactant_atom.GetBonds():
+    #         other_atom = bond.GetOtherAtom(reactant_atom)
+    #         if other_atom.GetAtomMapNum() == 0:
+    #             other_atom.SetAtomMapNum(next_index_to_add + 1)
+    #         next_index_to_add += 1
+    #         new_rule = Rule(ADD_BOND_FLAG, reactant_atom.GetAtomMapNum(), other_atom.GetAtomMapNum(), bond.GetBondType(), reactant_atom, other_atom, bond.GetBondType())
+    #         if not check_rule_defined(new_rule, rules_so_far + rules):
+    #             rules.append(new_rule)
+    #     return rules, next_index_to_add
+   
     for bond in reactant_atom.GetBonds():
-        if not compare_bond(reactant_atom, product_atom, bond):
-            return False
+        other_atom = bond.GetOtherAtom(reactant_atom)
+        if other_atom.GetAtomMapNum() == 0:
+            other_atom.SetAtomMapNum(next_index_to_add + 1)
+            next_index_to_add += 1
+        reactant_num = other_atom.GetAtomMapNum()
+        if reactant_num not in product_atom_neighbors:
+            atoms_to_add.append(reactant_atom)
+            atoms_to_add.append(other_atom)
+            new_rule = Rule(ADD_BOND_FLAG, reactant_atom.GetAtomMapNum(), reactant_num, bond.GetBondType(), reactant_atom, bond.GetOtherAtom(reactant_atom), bond.GetBondType())
+            if not check_rule_defined(new_rule, rules_so_far + rules):
+                rules.append(new_rule)
+                
+    for bond in product_atom.GetBonds():
+        product_num = bond.GetOtherAtom(product_atom).GetAtomMapNum()
+        if product_num not in reactant_atom_neighbors:
+            atoms_to_add.append(reactant_atom)
+            atoms_to_add.append(bond.GetOtherAtom(product_atom))
+            new_rule = Rule(REMOVE_BOND_FLAG, product_atom.GetAtomMapNum(), product_num, bond.GetBondType(), reactant_atom, bond.GetOtherAtom(product_atom), bond.GetBondType())
+            if not check_rule_defined(new_rule, rules_so_far + rules):
+                rules.append(new_rule)
+           
+    for bond in reactant_atom.GetBonds():
+        found_bond = compare_bond(reactant_atom, product_atom, bond)
+        if bond.GetOtherAtom(reactant_atom).GetAtomMapNum() in product_atom_neighbors \
+            and not found_bond[0]:
+            new_rule = Rule(MODIFY_BOND_FLAG, reactant_atom.GetAtomMapNum(), bond.GetOtherAtom(reactant_atom).GetAtomMapNum(), found_bond[1], reactant_atom, bond.GetOtherAtom(reactant_atom),  bond.GetBondType())
+            if not check_rule_defined(new_rule, rules_so_far + rules):
+                rules.append(new_rule)
 
-    return True
+    return rules, next_index_to_add, atoms_to_add
+
+
+# def add_two_atoms(new_reactant_mol: EditableMol, reactant_atom: Atom, other_atom: Atom, \
+#     reaction_to_core: Dict[int, int], changed_atom_map_num: Set[int]):
+#     """
+#     adds new_atom and other_new_atom to new_reactant_mol
+#     """
+#     new_atom, other_new_atom = create_atom(reactant_atom), create_atom(other_atom)
+#     reaction_to_core[reactant_atom.GetAtomMapNum()] = new_reactant_mol.AddAtom(new_atom)
+#     reaction_to_core[other_atom.GetAtomMapNum()] = new_reactant_mol.AddAtom(other_new_atom)
+#     changed_atom_map_num.add(new_atom.GetAtomMapNum())
+#     changed_atom_map_num.add(other_new_atom.GetAtomMapNum())
 
 
 def compare_bond(reactant_atom: Atom, product_atom: Atom, reactant_bond: Bond):
@@ -196,11 +246,22 @@ def compare_bond(reactant_atom: Atom, product_atom: Atom, reactant_bond: Bond):
     for product_bond in product_atom.GetBonds():
         if product_bond.GetOtherAtom(product_atom).GetAtomMapNum() == end_atom.GetAtomMapNum():
             if product_bond.GetBondType() != reactant_bond.GetBondType():
-                return False
+                return (False, product_bond.GetBondType())
 
-            return True
+            return (True, product_bond.GetBondType())
+    return (False, product_bond.GetBondType())
+
+
+def check_rule_defined(rule_to_check: Rule, rules_so_far: List[Rule]) -> bool:
+    """
+    Checks to see if a rule has already been defined in rules_so_far
+    """
+    for rule in rules_so_far:
+        if rule.rule_type == rule_to_check.rule_type and \
+            ((rule.start_atom, rule.end_atom) == (rule_to_check.start_atom, rule_to_check.end_atom) \
+                or (rule.end_atom, rule.start_atom) == (rule_to_check.start_atom, rule_to_check.end_atom)):
+                return True
     return False
-
 
 ##################################################################################################
 # CORE EXTENSION
@@ -213,7 +274,6 @@ def extend_reaction_core(reactant_mol: List[Mol], product_mol: List[Mol], reacti
     Heurstics found in section 2.2 of Route Designer paper
     Returns the reaction core that corrosponds to the products
     """
-
     # create copy of reaction_core[0] to iterate through
     copy_core = set()
     for mol in reaction_core:
@@ -235,7 +295,7 @@ def extend_reaction_core(reactant_mol: List[Mol], product_mol: List[Mol], reacti
         add_atoms_to_core(atom, core_mol, atom_map_nums, atom_index)
         reaction_core[core_mol_index] = core_mol.GetMol()
     # get leaving groups and add them to the reaction core
-    get_leaving_group(reactant_mol, product_mol, reaction_core, atom_map_nums)
+    # get_leaving_group(reactant_mol, product_mol, reaction_core, atom_map_nums)
     
     # if the number of reaction core's is not equal to the number of reactants, we connect them
     smiles = ""
@@ -287,40 +347,40 @@ def extend_primary_bonds(atom: Atom, core_mol: EditableMol, atom_map_nums: Set[i
             atom_map_nums.add(new_atom.GetAtomMapNum())
             
 
-def get_aromatic_ring(atom: Atom, reaction_core: ReactionCore, atom_map_nums: Set[int]) -> None:
-    """
-    Gets all the atoms and bonds in an aromatic ring
-    Mutates the
-    :param atom:
-    :param reaction_core:
-    :return:
-    """
+# def get_aromatic_ring(atom: Atom, reaction_core: ReactionCore, atom_map_nums: Set[int]) -> None:
+#     """
+#     Gets all the atoms and bonds in an aromatic ring
+#     Mutates the
+#     :param atom:
+#     :param reaction_core:
+#     :return:
+#     """
 
-    ownning_mol = atom.GetOwningMol()
-    aromatic_rings = ownning_mol.GetRingInfo().AtomRings()
-    # print(aromatic_rings)
+#     ownning_mol = atom.GetOwningMol()
+#     aromatic_rings = ownning_mol.GetRingInfo().AtomRings()
+#     # print(aromatic_rings)
 
-    # find the aromatic ring containing atom
-    aromatic_ring_containing_atom = []
-    for ring in aromatic_rings:
-        if atom.GetIdx() in ring:
-            aromatic_ring_containing_atom.append(ring)
+#     # find the aromatic ring containing atom
+#     aromatic_ring_containing_atom = []
+#     for ring in aromatic_rings:
+#         if atom.GetIdx() in ring:
+#             aromatic_ring_containing_atom.append(ring)
 
-    # retrieve bonds connected to atom in the ring
-    for ring in aromatic_ring_containing_atom:
-        for i, atom_idx in enumerate(ring):
-            next_atom_idx = ring[(i + 1) % len(ring)]
-            bond = ownning_mol.GetBondBetweenAtoms(atom_idx, next_atom_idx)
-            if bond is not None:
-                if not reaction_core.check_atom(bond.GetBeginAtom()):
-                    atom_map_nums.add(bond.GetBeginAtom().GetAtomMapNum())
-                    reaction_core.add_atom(bond.GetBeginAtom())
-                # print((bond.GetBeginAtom(), bond.GetEndAtom()))
-                if not reaction_core.check_atom(bond.GetEndAtom()):
-                    atom_map_nums.add(bond.GetEndAtom().GetAtomMapNum())
-                    reaction_core.add_atom(bond.GetEndAtom())
-                # print((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))
-                reaction_core.add_bond(bond)
+#     # retrieve bonds connected to atom in the ring
+#     for ring in aromatic_ring_containing_atom:
+#         for i, atom_idx in enumerate(ring):
+#             next_atom_idx = ring[(i + 1) % len(ring)]
+#             bond = ownning_mol.GetBondBetweenAtoms(atom_idx, next_atom_idx)
+#             if bond is not None:
+#                 if not reaction_core.check_atom(bond.GetBeginAtom()):
+#                     atom_map_nums.add(bond.GetBeginAtom().GetAtomMapNum())
+#                     reaction_core.add_atom(bond.GetBeginAtom())
+#                 # print((bond.GetBeginAtom(), bond.GetEndAtom()))
+#                 if not reaction_core.check_atom(bond.GetEndAtom()):
+#                     atom_map_nums.add(bond.GetEndAtom().GetAtomMapNum())
+#                     reaction_core.add_atom(bond.GetEndAtom())
+#                 # print((bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))
+#                 reaction_core.add_bond(bond)
             
     # for ring in aromatic_ring_containing_atom:
     #     for bond_idx in ring:
@@ -367,7 +427,7 @@ def add_atoms_to_core(atom: Atom, core_mol: EditableMol, atom_map_nums: Set[int]
             elif not check_external_nonaromatic_bond(new_atom) and new_atom.GetAtomMapNum() in atom_map_nums \
                         and new_atom.GetAtomMapNum() not in atom_seen_so_far:
                 queue.append(new_atom)
-                queue_indicies.append(find_atom(new_atom.GetAtomMaoNum(), [core_mol.GetMol()]).GetIdx())
+                queue_indicies.append(find_atom(new_atom.GetAtomMapNum(), [core_mol.GetMol()]).GetIdx())
                 atom_seen_so_far.add(new_atom.GetAtomMapNum())
             # otherwise do not add
             elif check_external_nonaromatic_bond(new_atom):
@@ -456,7 +516,8 @@ def duplicate_reaction_core_to_product_core(reactant_core: List[Mol], products: 
     atom_map_to_index = {}
     for atom in all_atoms:
         product_atom = find_atom(atom.GetAtomMapNum(), products)
-        atom_map_to_index[product_atom.GetAtomMapNum()] = product_core.AddAtom(create_atom(product_atom))
+        if product_atom is not None:
+            atom_map_to_index[product_atom.GetAtomMapNum()] = product_core.AddAtom(create_atom(product_atom))
     
     for product in products:
         for bond in product.GetBonds():
@@ -539,19 +600,6 @@ def connect_two_subgraphs(overall_mol: Mol, mol1: Mol, mol2: Mol) -> Mol:
     
     return final_mol.GetMol()
     
-    
-def generate_graph(mol: Mol) -> Graph:
-    """
-    Generates Mol as a Graph object
-    Does not include bond 
-    """
-    graph = Graph()
-    for atom in mol.GetAtoms():
-        graph.add_node(atom.GetAtomMapNum(), label=atom.GetAtomicNum())
-    for bond in mol.GetBonds():
-        graph.add_edge(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum(), bond_type=bond.GetBondTypeAsDouble())
-    
-    return graph
 
 if __name__ == "__main__":
     
@@ -562,3 +610,14 @@ if __name__ == "__main__":
     highlight_reaction_core(core[2][0], set(), set(), "og_product.png")
     highlight_reaction_core(reactant_core[0], set(), set(), "reactant_core.png")
     highlight_reaction_core(product_core[0], set(), set(), "product_core.png")
+    
+    # for rule in core[3]:
+    #     print(rule)
+    
+        # cs8bo3302
+    # core = get_reaction_core(["CC1=CC=C(S(=O)(NN)=O)C=C1", "CC1=CC=C(C=C)C=C1", "CO"], ["CC1=CC=C(S(=O)(CC(OC)C2=CC=C(C)C=C2)=O)C=C1"])
+    # reactant_core, product_core = extend_reaction_core(core[1], core[2], core[0])
+    # highlight_reaction_core(core[1][0], set(), set(), "og_reactant.png")
+    # highlight_reaction_core(core[2][0], set(), set(), "og_product.png")
+    # highlight_reaction_core(reactant_core[0], set(), set(), "reactant_core.png")
+    # highlight_reaction_core(product_core[0], set(), set(), "product_core.png")

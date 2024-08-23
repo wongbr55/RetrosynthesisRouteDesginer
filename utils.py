@@ -8,12 +8,38 @@ from rdkit.Chem import Draw
 from rdkit.Chem.rdChemReactions import ChemicalReaction
 from typing import List, Set, Tuple, Iterable
 
-
+import networkx as nx
+from networkx import Graph
 
 REMOVE_BOND_FLAG = "REMOVE"
 ADD_BOND_FLAG = "ADD"
 MODIFY_BOND_FLAG = "MODIFY"
 
+
+def generate_graph(mol: Mol) -> Graph:
+    """
+    Generates Mol as a Graph object
+    Does not include bond 
+    """
+    graph = Graph()
+    for atom in mol.GetAtoms():
+        graph.add_node(atom.GetAtomMapNum(), label=atom.GetAtomicNum())
+    for bond in mol.GetBonds():
+        graph.add_edge(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum(), bond_type=bond.GetBondTypeAsDouble())
+    
+    return graph
+
+def generate_graph_with_indicies_as_labels(mol: Mol) -> Graph:
+    """
+    Generates graph and uses indicies of atoms as labels instead of map numbers
+    """
+    graph = Graph()
+    for atom in mol.GetAtoms():
+        graph.add_node(atom.GetIdx(), label=atom.GetAtomicNum())
+    for bond in mol.GetBonds():
+        graph.add_edge(bond.GetBeginAtomIdx(), bond.GetEndAtomIdx(), bond_type=bond.GetBondTypeAsDouble())
+    
+    return graph
 
 def create_atom(atom: Atom) -> Atom:
     """
@@ -114,4 +140,4 @@ def node_match(n1, n2):
 
 
 def edge_match(e1, e2):
-    return e1['weight'] == e2['weight']
+    return e1['bond_type'] == e2['bond_type']
