@@ -2,9 +2,35 @@
 File containing class information for all defined classes (currently only ReactionCore)
 """
 from rdkit import Chem
-from rdkit.Chem.rdchem import Atom, Bond, Mol, EditableMol
+from rdkit.Chem.rdchem import Atom, Bond, BondType, Mol, EditableMol
 from typing import Set, Tuple, List, Dict
 from utils import find_bond_set
+
+
+
+class Rule():
+    
+    rule_type: str
+    start_atom: int
+    end_atom: int
+    start_atom_object: Atom
+    end_atom_object: Atom
+    begin_bond_type: BondType
+    end_bond_type: BondType
+    
+    def __init__(self, rule_type: str, start_atom: int, end_atom: int, begin_bond_type: BondType, \
+        start_atom_object: Atom, end_atom_object: Atom, end_bond_type: BondType) -> None:
+        self.rule_type = rule_type
+        self.start_atom = start_atom
+        self.end_atom = end_atom
+        self.start_atom_object = start_atom_object
+        self.end_atom_object = end_atom_object
+        self.begin_bond_type = begin_bond_type
+        self.end_bond_type = end_bond_type
+    
+    def __str__(self) -> str:
+        return "Rule: " + self.rule_type + " between " + str((self.start_atom, self.end_atom)) + " with bond type " + str(self.end_bond_type) + " from " + str(self.begin_bond_type)
+
 
 class ReactionCore():
     
@@ -107,10 +133,11 @@ class ReactionCore():
                 return atom
         return None
          
-    def get_mol(self) -> Mol:
+    def get_mol(self, strip_map_num: bool=False) -> Mol:
         """
         Returns a new Mol object for current Reaction core with proper bonds and such
         Mol object may contain multiple molecules
+        strip_map_num is boolean for whether to strip map nums or not
         """
         new_mol = EditableMol(Chem.Mol())
         map_num_to_idx = {}
@@ -142,8 +169,9 @@ class ReactionCore():
             # new_mol.AddBond(new_num1, new_num2, bond.GetBondType())
             new_mol.AddBond(idx1, idx2, bond.GetBondType())
         new_mol = new_mol.GetMol()
-        # for atom in new_mol.GetAtoms():
-        #     atom.SetAtomMapNum(0)
+        if strip_map_num:
+            for atom in new_mol.GetAtoms():
+                atom.SetAtomMapNum(0)
         return new_mol
     
     def get_smarts(self) -> str:
@@ -213,8 +241,8 @@ class Fragment(ReactionCore):
     
     def _get_fragment_for_fixed_atom(self, atom: Atom, atoms_seen_so_far_map_num: Set[int], fragments: Set) -> Set[int]:
         atoms_seen_so_far_map_num.add(atom.GetAtomMapNum())
-        new_fragment_atoms = set()
-        new_fragment_atoms_map_num = set()
+        new_fragment_atoms = {atom}
+        new_fragment_atoms_map_num = {atom.GetAtomMapNum()}
         new_fragment_bonds = set()
         
         self._add_atoms_from_curr_atom(atom, new_fragment_atoms, new_fragment_bonds, set(), new_fragment_atoms_map_num)

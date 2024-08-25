@@ -9,7 +9,7 @@ from typing import Set, Tuple, List, Dict
 
 import networkx as nx
 import matplotlib.pyplot as plt
-from utils import node_match, edge_match, highlight_reaction_core, generate_graph, generate_graph_with_indicies_as_labels, ADD_BOND_FLAG, REMOVE_BOND_FLAG, MODIFY_BOND_FLAG
+from utils import node_match, edge_match, find_atom, create_atom, highlight_reaction_core, generate_graph, generate_graph_with_indicies_as_labels, ADD_BOND_FLAG, REMOVE_BOND_FLAG, MODIFY_BOND_FLAG
 import core_extraction as ce
 
 from classes.partial_molecule import Fragment, Rule
@@ -18,27 +18,39 @@ from classes.partial_molecule import Fragment, Rule
 # Template matching/Fragment retrieval
 ##################################################################################################
 
-def get_reactants_for_substrate(substrate: str, reactant_core: List[Mol], product_core: List[Mol], rules: Rule) -> Set[Mol]:
+def get_reactants_for_substrate(substrate: str, reactant_core:Mol, product_core: Mol, rules: Rule) -> Set[Mol]:
     """
     Matches the core template to a fixed substrate and returns proper reactants
     """
     substrate_mol = Chem.MolFromSmiles(substrate)
-    counter = 1
+    # Chem.rdmolops.Kekulize(substrate_mol, clearAromaticFlags=True)
     for atom in substrate_mol.GetAtoms():
-        atom.SetAtomMapNum(counter)
-        counter += 1
+        atom.SetAtomMapNum(atom.GetIdx())
     
     highlight_reaction_core(substrate_mol, set(), set(), "substrate.png")
 
     for rule in rules:
         print(rule)
-    core_to_substrate = get_subgraph(substrate_mol, product_core[0])
-    substrate_to_core = {core_to_substrate[key] : key for key in core_to_substrate}
-    print(substrate_to_core)
+    substrate_to_core = get_subgraph(substrate_mol, product_core)
+    core_to_substrate = {substrate_to_core[key] : key for key in substrate_to_core}
+    print(core_to_substrate)
     modify_rules = []
     substrate_mol = EditableMol(substrate_mol)
     for rule in rules:
-        index1, index2 = substrate_to_core[rule.start_atom], substrate_to_core[rule.end_atom]
+        # we need to make sure rule.start_atom and rule.end_atom are in core_to_substrate
+        # if they are not then these are leaving group atoms we need to add back
+        if rule.start_atom in core_to_substrate:
+            index1 = core_to_substrate[rule.start_atom]
+        else:
+            index1 = substrate_mol.AddAtom(create_atom(find_atom(rule.start_atom, [reactant_core])))
+            core_to_substrate[rule.start_atom] = index1
+        if rule.end_atom in core_to_substrate:
+            index2 = core_to_substrate[rule.end_atom]
+        else:
+            index2 = substrate_mol.AddAtom(create_atom(find_atom(rule.end_atom, [reactant_core])))
+            core_to_substrate[rule.end_atom] = index2
+        
+        # check the rule types and perform needed action
         if rule.rule_type == ADD_BOND_FLAG:
             substrate_mol.AddBond(index1, index2, rule.end_bond_type)
         elif rule.rule_type == REMOVE_BOND_FLAG:
@@ -47,10 +59,15 @@ def get_reactants_for_substrate(substrate: str, reactant_core: List[Mol], produc
             modify_rules.append(rule)
     
     substrate_mol = substrate_mol.GetMol()
+    # deal with modify bonds seperatly
     for rule in modify_rules:
+        index1, index2 = core_to_substrate[rule.start_atom], core_to_substrate[rule.end_atom]
         substrate_mol.GetBondBetweenAtoms(index1, index2).SetBondType(rule.end_bond_type)
     
-    return Chem.MolToSmiles(substrate_mol)
+    smiles = Chem.MolToSmiles(substrate_mol).split(".")
+    highlight_reaction_core(substrate_mol, set(), set(), "new_reactants.png")
+    return [smile for smile in smiles]
+    # return smiles
             
 
 def get_subgraph(substrate_mol: Mol, product_template_mol: Mol) -> Dict[int, int]:
@@ -75,20 +92,20 @@ if __name__ == "__main__":
     # reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
     # highlight_reaction_core(core[1][0], set(), set(), "og_reactant.png")
     # highlight_reaction_core(core[2][0], set(), set(), "og_product.png")
-    # highlight_reaction_core(reactant_core[0], set(), set(), "reactant_core.png")
-    # highlight_reaction_core(product_core[0], set(), set(), "product_core.png")
+    # highlight_reaction_core(reactant_core, set(), set(), "reactant_core.png")
+    # highlight_reaction_core(product_core, set(), set(), "product_core.png")
     # mols = get_reactants_for_substrate("O=C(N1C)C2=CC=CC=C2C1CC3=CC=C(C(C)=O)C=C3", core[0], product_core, core[3])
+    # # highlight_reaction_core(Chem.MolFromSmiles(mols), set(), set(), "new_reactant.png")
     # print(mols)
     
     # cs8bo3302
-    # core = ce.get_reaction_core(["CC1=CC=C(S(=O)(NN)=O)C=C1", "CC1=CC=C(C=C)C=C1", "CO"], ["CC1=CC=C(S(=O)(CC(OC)C2=CC=C(C)C=C2)=O)C=C1"])
-    # reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
-    # highlight_reaction_core(core[1][0], set(), set(), "og_reactant.png")
-    # highlight_reaction_core(core[2][0], set(), set(), "og_product.png")
-    # highlight_reaction_core(reactant_core[0], set(), set(), "reactant_core.png")
-    # highlight_reaction_core(product_core[0], set(), set(), "product_core.png")
-    # mols = get_reactants_for_substrate("O=C(N1C)C2=CC=CC=C2C1CC3=CC=C(C(C)=O)C=C3", core[0], product_core, core[3])
-    # print(mols)
+    core = ce.get_reaction_core(["CC1=CC=C(S(=O)(NN)=O)C=C1", "CC1=CC=C(C=C)C=C1", "CO"], ["CC1=CC=C(S(=O)(CC(OC)C2=CC=C(C)C=C2)=O)C=C1"])
+    reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
+
+    highlight_reaction_core(reactant_core, set(), set(), "reactant_core.png")
+    highlight_reaction_core(product_core, set(), set(), "product_core.png")
+    mols = get_reactants_for_substrate("CC1=CC=C(S(CC(OC)C2=CC=C(C)C=C2)(=O)=O)C=C1", core[0], product_core, core[3])
+    print(mols)
     
     # wiley26_scheme_2
     # core = ce.get_reaction_core(["[R]O"], ["[R]OC1CCCO1", "[H][H]"])
@@ -123,15 +140,17 @@ if __name__ == "__main__":
 
 
     # RSC22
-    core = ce.get_reaction_core(["[H]C1=C(C2=CC=C([R])C=C2)N=C3C1C=CC=C3", "[R2]N[R1]"], ["[R]C(C=C1)=CC=C1C2=C(N([R1])[R2])C3C=CC=CC3=N2"])
-    reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
-    # print(product_core)
-    highlight_reaction_core(core[1][0], set(), set(), "og_reactant.png")
-    highlight_reaction_core(core[2][0], set(), set(), "og_product.png")
-    highlight_reaction_core(reactant_core[0], set(), set(), "reactant_core.png")
-    highlight_reaction_core(product_core[0], set(), set(), "product_core.png")
-    mols = get_reactants_for_substrate("N12C=CC=CC1=NC(C3=CC=CC=C3)=C2N4C=NC=C4", core[0], product_core, core[3])
-    print(mols)   
+    # core = ce.get_reaction_core(["[H]C1=C([R])N=C2N1C=CC=C2", "[R2]N[R1]"], ["[R]C1=C(N([R1])[R2])N2C=CC=CC2=N1"])
+    # reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
+    # highlight_reaction_core(core[1][0], set(), set(), "og_reactant.png")
+    # highlight_reaction_core(core[2][0], set(), set(), "og_product.png")
+    # highlight_reaction_core(reactant_core, set(), set(), "reactant_core.png")
+    # highlight_reaction_core(product_core, set(), set(), "product_core.png")
+    # mols = get_reactants_for_substrate("N12C=CC=CC1=NC(C3=CC=CC=C3)=C2N4C=NC=C4", core[0], product_core, core[3])
+    # print(mols)
+    # highlight_reaction_core(Chem.MolFromSmiles(mols), set(), set(), "new_reactant.png")
+
+    # print(mols)   
 
     # product_core = ce.extend_reaction_core(core[1], core[2], core[0])
     # highlight_reaction_core(core[0].get_mol(), set(), set(), "extended_reactant_core.png")
