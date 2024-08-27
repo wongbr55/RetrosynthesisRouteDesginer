@@ -15,6 +15,10 @@ REMOVE_BOND_FLAG = "REMOVE"
 ADD_BOND_FLAG = "ADD"
 MODIFY_BOND_FLAG = "MODIFY"
 
+R_GROUP_PLACEHOLDER = 30
+
+
+VALENCY_TABLE = {7: 3}
 
 def generate_graph(mol: Mol) -> Graph:
     """

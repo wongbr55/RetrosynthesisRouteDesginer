@@ -190,8 +190,6 @@ def compare_props(reactant_atom: Atom, product_atom: Atom, rules_so_far: List[Ru
                 other_atom.SetAtomMapNum(next_index_to_add + 1)
                 next_index_to_add += 1
             new_rule = Rule(ADD_BOND_FLAG, reactant_atom.GetAtomMapNum(), other_atom.GetAtomMapNum(), bond.GetBondType(), reactant_atom, other_atom, bond.GetBondType())
-            print((reactant_atom.GetAtomMapNum(), other_atom.GetAtomMapNum()))
-            print(not check_rule_defined(new_rule, rules_so_far + rules))
             if not check_rule_defined(new_rule, rules_so_far + rules):
                 rules.append(new_rule)
         return rules, next_index_to_add
@@ -290,16 +288,17 @@ def extend_reaction_core(reactant_mol: List[Mol], product_mol: List[Mol], reacti
     # extend core
     core_mol = EditableMol(reaction_core)
     for atom in copy_core:
+        # check to see if atom is in the reactants side
         atom_from_reactants = find_atom(atom.GetAtomMapNum(), reactant_mol)
-        # find the reaction core Mol instance that is changing
-        atom_index = find_atom(atom.GetAtomMapNum(), [reaction_core]).GetIdx()
-        # we first employ some special heursitics for primary bonds
-        extend_primary_bonds(atom_from_reactants, core_mol, atom_map_nums, atom_index)
-        # then we apply the general heurstics
-        add_atoms_to_core(atom, core_mol, atom_map_nums, atom_index)
-    # get leaving groups and add them to the reaction core
-    # get_leaving_group(reactant_mol, product_mol, reaction_core, atom_map_nums)
-    
+        # if atom is not in the reactants side, that means it is not present in the reactants, thus we ignore 
+        if atom_from_reactants is not None:
+            # find the reaction core Mol instance that is changing
+            atom_index = find_atom(atom.GetAtomMapNum(), [reaction_core]).GetIdx()
+            # we first employ some special heursitics for primary bonds
+            extend_primary_bonds(atom_from_reactants, core_mol, atom_map_nums, atom_index)
+            # then we apply the general heurstics
+            add_atoms_to_core(atom, core_mol, atom_map_nums, atom_index)
+        
     # if the number of reaction core's is not equal to the number of reactants, we connect them
     reaction_core = core_mol.GetMol()
     smiles = Chem.MolToSmiles(reaction_core)
@@ -472,54 +471,6 @@ def check_external_nonaromatic_bond(new_atom: Atom) -> bool:
     return False
 
 
-def get_leaving_group(reactant_mol: List[Mol], product_mol: List[Mol], reaction_core: List[Mol],
-                      atom_map_nums: Set[int]) -> None:
-    """
-    Gets leaving group Atoms and Bonds and mutates reaction_core to add them
-    :param reactant_mol:
-    :param product_mol:
-    :param reaction_core:
-    :return:
-    """
-
-    # we check for bonds being broken in reaction core
-    # the only place leaving groups can occur is from bonds in reaction core as their properties change
-    # such as neighbors, degree, etc.
-    to_add_atoms = set()
-    to_add_bonds = set()
-    for mol in reactant_mol:
-        for core_atom in mol.GetAtoms():
-            # find leaving group
-            product_atom = find_atom(core_atom.GetAtomMapNum(), product_mol)
-            if product_atom is not None:
-                reactant_neighbors = {atom.GetAtomMapNum() for atom in core_atom.GetNeighbors()}
-                product_neighbors = {atom.GetAtomMapNum() for atom in product_atom.GetNeighbors()}
-                leaving_map_num = {map_num for map_num in reactant_neighbors if map_num not in product_neighbors and
-                                map_num not in atom_map_nums}
-                # add leaving group to reaction core
-                # add atoms
-                leaving_atoms = {find_atom(num, reactant_mol) for num in leaving_map_num}
-                for atom in leaving_atoms:
-                    to_add_atoms.add(atom)
-                atom_map_nums = atom_map_nums.union(leaving_map_num)
-                # add bonds
-                for atom in leaving_atoms:
-                    for bond in atom.GetBonds():
-                        neighbor = bond.GetOtherAtom(atom)
-                        if neighbor.GetAtomMapNum() in leaving_map_num and neighbor.GetAtomMapNum() not in atom_map_nums:
-                            to_add_atoms.add(neighbor)
-                            to_add_bonds.add(bond)
-                            atom_map_nums.add(neighbor.GetAtomMapNum())
-
-        matching_core = reaction_core[reactant_mol.index(mol)]
-        atom_map_to_core = {}
-        for atom in to_add_atoms:
-            atom_map_to_core = matching_core.AddAtom(create_atom(atom))
-        for bond in to_add_bonds:
-            index1, index2 = atom_map_to_core[bond.GetBeginAtom().GetAtomMapNum()], atom_map_to_core[bond.GetEndAtom().GetAtomMapNum()]
-            matching_core.AddBond(index1, index2, bond.GetBondType())
-        to_add_atoms, to_add_bonds = set(), set()
-
 def duplicate_reaction_core_to_product_core(reactant_core: Mol, products: List[Mol]) -> Mol:
     """
     Takes the reactant core and duplicates it to the product core with the proper bonds and such in the product
@@ -581,7 +532,7 @@ def connect_two_subgraphs(overall_mol: Mol, mol1: Mol, mol2: Mol) -> Mol:
                 if distance < min_distance:
                     min_distance = distance
                     min_path[0] = nx.shortest_path(graph, source=u, target=v)
-            except nx.NetworkXNoPath:
+            except:
                 continue
     # if no path is found, return none
     if min_path == []:
