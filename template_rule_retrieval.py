@@ -101,12 +101,12 @@ def get_reactants_for_substrate(substrate: str, reactant_core:Mol, product_core:
                 atom2.SetIsAromatic(False)
     
     
-    for atom in substrate_mol.GetAtoms():
-        atom.SetAtomMapNum(0)
-    smiles = Chem.MolToSmiles(substrate_mol).split(".")
+    # for atom in substrate_mol.GetAtoms():
+        # atom.SetAtomMapNum(0)
     highlight_reaction_core(substrate_mol, set(), set(), "new_reactants.png")
+    # Chem.rdmolops.Kekulize(substrate_mol, clearAromaticFlags=True)
+    smiles = Chem.MolToSmiles(substrate_mol).split(".")
     return smiles
-    # return smiles
             
 
 def get_subgraph(substrate_mol: Mol, product_template_mol: Mol) -> Dict[int, int]:
@@ -115,7 +115,7 @@ def get_subgraph(substrate_mol: Mol, product_template_mol: Mol) -> Dict[int, int
     Returns {} if not, otherwise returns a dict mapping substrate to core atoms
     """
     substrate_graph, core_graph = generate_graph_with_indicies_as_labels(substrate_mol), generate_graph(product_template_mol)
-
+    
     matcher = nx.algorithms.isomorphism.GraphMatcher(substrate_graph, core_graph, node_match=node_match, edge_match=edge_match)
     subgraphs = [subgraph for subgraph in matcher.subgraph_isomorphisms_iter()]
     print(len(subgraphs))
@@ -126,14 +126,12 @@ def get_subgraph(substrate_mol: Mol, product_template_mol: Mol) -> Dict[int, int
     else:
         return subgraphs[0]
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     # core = ce.get_reaction_core(["O=C1C(C(OCC)=O)CCC1", "C=CC(C[R1])=C"], ["O=C1C(C(OCC)=O)(CCC(C[R1])=C)CCC1"])
     
     # wiley2_table_3
     # core = ce.get_reaction_core(["O=C(NC)C1=CC=CC=C1/C=C([R1])/[R2]"], ["O=C(N1C)C2=CC=CC=C2C1C([R1])[R2]"])
     # reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
-    # highlight_reaction_core(core[1][0], set(), set(), "og_reactant.png")
-    # highlight_reaction_core(core[2][0], set(), set(), "og_product.png")
     # highlight_reaction_core(reactant_core, set(), set(), "reactant_core.png")
     # highlight_reaction_core(product_core, set(), set(), "product_core.png")
     # mols = get_reactants_for_substrate("O=C(N1C)C2=CC=CC=C2C1CC3=CC=C(C(C)=O)C=C3", core[0], product_core, core[3])
@@ -144,7 +142,7 @@ if __name__ == "__main__":
     # reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
     # highlight_reaction_core(reactant_core, set(), set(), "reactant_core.png")
     # highlight_reaction_core(product_core, set(), set(), "product_core.png")
-    # mols = get_reactants_for_substrate("O=S(C1=CC(OC)=C(OC)C=C1)(CC(OC)C2=CC=C(C)C=C2)=O", core[0], product_core, core[3])
+    # mols = get_reactants_for_substrate("O=S(C1=C(C)C=CC=C1)(CC(OC)C2=CC=C(C)C=C2)=O", core[0], product_core, core[3])
     # print(mols)
     
     
@@ -173,14 +171,12 @@ if __name__ == "__main__":
     # print(mols)
     
     # ja3c02776_0005.png
-    # core = ce.get_reaction_core(["C12=CC=CC=C1C=CC=N2", "O=C([R1])[R2]"], ["[R2]C([R1])(C1CC2=CC=CC=C2CN1)O"])
+    # core = ce.get_reaction_core(["C12=CC=CC=C1C=CC=N2", "O=C([R1])[R2]"], ["[R2]C(O)([R1])C1NC2=CC=CC=C2CC1"])
     # reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
     # highlight_reaction_core(reactant_core, set(), set(), "reactant_core.png")
     # highlight_reaction_core(product_core, set(), set(), "product_core.png")
-    # # OC(C)(C1NC(/C(CC1)=C\C)=C/C)C2=CC=C(C=C2)C3CCCCC3
-    # mols = get_reactants_for_substrate("OC(C)(C1NC(/C(CC1)=C\C)=C/C)C2=CC=C(C=C2)C3CCCCC3", core[0], product_core, core[3])
-
-    # # mols = get_reactants_for_substrate("OC(C1=CC=C(C2CCCCC2)C=C1)(C)C3NC4=CC=CC=C4CC3", core[0], product_core, core[3])
+    # print(Chem.MolToSmiles(product_core))
+    # mols = get_reactants_for_substrate("OC(C)(C1NC2=CC=CC(C)=C2CC1)C3=CC=C(C=C3)C4CCCCC4", core[0], product_core, core[3])
     # print(mols)
     
     # wiley15_table_2
@@ -229,15 +225,15 @@ if __name__ == "__main__":
     # print(mols) 
     
     # jo2c00856_0007
-    core = ce.get_reaction_core(["OC1=CC=CC=C1NCC(N([R1])[R2])=O"], ["O=C(N([R2])[R1])C1=NC2=CC=CC=C2O1"])
-    reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
-    highlight_reaction_core(reactant_core, set(), set(), "reactant_core.png")
-    highlight_reaction_core(product_core, set(), set(), "product_core.png")
-    mols = get_reactants_for_substrate("O=C(NC)C1=NC2=CC=CC=C2O1", core[0], product_core, core[3])
-    print(mols) 
+    # core = ce.get_reaction_core(["OC1=CC=CC=C1NCC(N([R1])[R2])=O"], ["O=C(N([R2])[R1])C1=NC2=CC=CC=C2O1"])
+    # reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
+    # highlight_reaction_core(reactant_core, set(), set(), "reactant_core.png")
+    # highlight_reaction_core(product_core, set(), set(), "product_core.png")
+    # mols = get_reactants_for_substrate("O=C(NC)C1=NC2=CC=CC=C2O1", core[0], product_core, core[3])
+    # print(mols) 
     
     # jo1c00719_0008
-    # core = ce.get_reaction_core(["[R]S", "C=C(N=[N+]=[N-])C1=CC=CC=C1"], ["N/C(C1=CC=CC=C1)=C(S[R])\S[R]"])
+    # core = ce.get_reaction_core(["SC1=CC=C([R])C=C1", "C=C(N=[N+]=[N-])C1=CC=CC=C1"], ["N/C(C1=CC=CC=C1)=C(SC2=CC=C([R])C=C2)\SC3=CC=C([R])C=C3"])
     # reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
     # highlight_reaction_core(reactant_core, set(), set(), "reactant_core.png")
     # highlight_reaction_core(product_core, set(), set(), "product_core.png")
@@ -245,7 +241,7 @@ if __name__ == "__main__":
     # print(mols) 
     
     # jo3c02090_0008
-    # core = ce.get_reaction_core(["[R]S", "FC1=CC=C(CN)C=C1"], ["[R]S/N=C/C1=CC=CC=C1"])
+    # core = ce.get_reaction_core(["[R]S", "FC1=CC=C(CN)C=C1"], ["[R]S/N=C/C1=CC=C(F)C=C1"])
     # reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
     # highlight_reaction_core(reactant_core, set(), set(), "reactant_core.png")
     # highlight_reaction_core(product_core, set(), set(), "product_core.png")
@@ -301,8 +297,17 @@ if __name__ == "__main__":
         # index += 1
     
     # wiley6_scheme_2
-    # core = ce.get_reaction_core(["[R2]C1([R1])C([R])C1", "O", "O"], ["O=C([R])CC(O)([R1])[R2]"])
+    # core = ce.get_reaction_core(["[R2]C1([R1])C([R])C1", "O"], ["O=C([R])CC([R2])(O)[R1]"])
     # reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
     # highlight_reaction_core(reactant_core, set(), set(), "reactant_core.png")
     # highlight_reaction_core(product_core, set(), set(), "product_core.png")
-    # mols = get_reactants_for_substrate("OCCC(C1=CC=C(OC(C)=O)C=C1)=O", core[0], product_core, core[3])
+    # mols = get_reactants_for_substrate("OCCC(C1=CC=C(OC2=CC=CC=C2)C=C1)=O", core[0], product_core, core[3])
+    # print(mols)
+    
+    # 10.1021
+    # core = ce.get_reaction_core(["CCC1=CC(C(C)(C)C)=CC=C1", "O=C(O)[R]"], ["CC(OC([R])=O)C1=CC(C(C)(C)C)=CC=C1"])
+    # reactant_core, product_core = ce.extend_reaction_core(core[1], core[2], core[0])
+    # highlight_reaction_core(reactant_core, set(), set(), "reactant_core.png")
+    # highlight_reaction_core(product_core, set(), set(), "product_core.png")
+    # mols = get_reactants_for_substrate("CC(OC(C1=CC=CC=C1)=O)C2=CC(C(C)(C)C)=CC=C2", core[0], product_core, core[3])
+    # print(mols)

@@ -8,6 +8,7 @@ from typing import Set, Tuple, List, Dict
 from core_extraction import get_reaction_core, extend_reaction_core
 from template_rule_retrieval import get_reactants_for_substrate
 from reverse_reaction import get_reactants
+from utils import highlight_reaction_core
 
 import json
 import csv
@@ -28,11 +29,11 @@ def evaluate_reverse_reaction(ground_truth_csv: str, reaction_template_csv: str)
             filenames.append(row[1])
             products = []
             reactants = []
-            if row[2] != "NULL": products.append(row[2])
-            if row[3] != "NULL": products.append(row[3])
-            if row[4] != "NULL": reactants.append(row[4])
-            if row[5] != "NULL": reactants.append(row[5])
+            if row[4] != "NULL": products.append(row[4])
+            if row[5] != "NULL": products.append(row[5])
             if row[6] != "NULL": reactants.append(row[6])
+            if row[7] != "NULL": reactants.append(row[7])
+            if row[8] != "NULL": reactants.append(row[8])
             reaction_templates[image_num] = (reactants, products)
     # get the evalutaions for each substrate
     evaluations = {}
@@ -52,12 +53,11 @@ def evaluate_reverse_reaction(ground_truth_csv: str, reaction_template_csv: str)
             if row[7] != "NULL": ground_truth_reactants.extend(row[7].split("."))
             try:
                 generated_reactants = get_reactants(substrate, template[0], template[1])
-                # if image_num == "16":
-                    
+                
                 evaluation = evaluate(ground_truth_reactants, generated_reactants)
                 evaluations[row[1] + " (" + row[2] + ")"] = evaluation
             except:
-                evaluations[row[1] + " (" + row[2] + ")"] = "ERROR"
+                evaluations[row[1] + " (" + row[2] + ")"] = ("ERROR", len(ground_truth_reactants))
 
     return evaluations, filenames
 
@@ -70,59 +70,48 @@ def evaluate_csv(ground_truth_csv: str, reaction_template_csv: str) -> Dict[str,
     
     # reaction cores maps a file to its reactant and product cores
     # to be used when evalauting files in the ground truth
-    reaction_cores = {}
+    reaction_templates = {}
+    filenames = []
     with open(reaction_template_csv, "r") as csvfile:
-        reaction_templates = csv.reader(csvfile)
-        next(reaction_templates)
-        for row in reaction_templates:
-            filename = row[0]
+        templates = csv.reader(csvfile)
+        next(templates)
+        for row in templates:
+            image_num = row[0]
+            filenames.append(row[1])
             products = []
             reactants = []
-            if row[1] != "": products.append(row[1])
-            if row[2] != "": products.append(row[2])
-            if row[3] != "": reactants.append(row[3])
-            if row[4] != "": reactants.append(row[4])
-            if row[5] != "": reactants.append(row[5])
-            try:
-                core = get_reaction_core(reactants, products)
-                product_core = extend_reaction_core(core[1], core[2], core[0])
-                reaction_cores[filename] = (core[0], product_core)
-            except:
-                reaction_cores[filename] = "ERROR UPON CORE EXTRACTION"
-    
+            if row[4] != "NULL": products.append(row[4])
+            if row[5] != "NULL": products.append(row[5])
+            if row[6] != "NULL": reactants.append(row[6])
+            if row[7] != "NULL": reactants.append(row[7])
+            if row[8] != "NULL": reactants.append(row[8])
+            reaction_templates[image_num] = (reactants, products)
+    # get the evalutaions for each substrate
     evaluations = {}
     with open(ground_truth_csv, "r") as csvfile:
         ground_truths = csv.reader(csvfile)
         next(ground_truths)
         for row in ground_truths:
-            # get the reaction cores:
-            cores = []
-            filename = row[0]
-            for file in reaction_cores:
-                if file in filename and reaction_cores[file] is not str:
-                    cores.append(reaction_cores[file][0])
-                    cores.append(reaction_cores[file][1])
-                    break
-                elif file in filename and reaction_cores[file] is str:
-                    break
-            if cores == []:
-                evaluations[filename] = "UNABLE TO RETREIEVE CORE"
-            else:
-            # get generated reactants and evaluate againsy ground truth
-                substrate = row[1]
-                ground_truth_reactants = []
-                if row[3] != "": ground_truth_reactants.append(row[3])
-                if row[4] != "": ground_truth_reactants.append(row[4])
-                if row[5] != "": ground_truth_reactants.append(row[5])
-                try:
-                    generated_reactants = get_reactants_for_substrate(substrate, cores[0], cores[1])
-                    generated_reactant_smiles = [Chem.MolToSmiles(mol) for mol in generated_reactants]
-                    # print(generated_reactant_smiles)
-                    evaluation = evaluate(ground_truth_reactants, generated_reactant_smiles)
-                    evaluations[filename] = evaluation
-                except:
-                    evaluations[filename] = "ERROR UPON FRAGMENTATION/REPAIRMENT"
-    
+            template = []
+            image_num = row[0]
+            template.append(reaction_templates[image_num][0])
+            template.append(reaction_templates[image_num][1])
+            
+            substrate = row[3]
+            ground_truth_reactants = []
+            if row[5] != "NULL": ground_truth_reactants.extend(row[5].split("."))
+            if row[6] != "NULL": ground_truth_reactants.extend(row[6].split("."))
+            if row[7] != "NULL": ground_truth_reactants.extend(row[7].split("."))
+            try:
+                core = get_reaction_core(template[0], template[1])
+                reactant_core, product_core = extend_reaction_core(core[1], core[2], core[0])
+                generated_reactants = get_reactants_for_substrate(substrate, reactant_core, product_core, core[3])
+                evaluation = evaluate(ground_truth_reactants, generated_reactants)
+                evaluations[row[1] + " (" + row[2] + ")"] = evaluation
+            except:
+                evaluations[row[1] + " (" + row[2] + ")"] = ("ERROR", len(ground_truth_reactants))
+
+    return evaluations, filenames
     with open("evaluations.json", "w") as file:
         json.dump(evaluations, file)
     return evaluations
@@ -187,7 +176,9 @@ def tanimoto_similarity(smiles1: str, smiles2: str) -> float:
         return -1
     
 if __name__ == "__main__":
-    results, file_names = evaluate_reverse_reaction("Ground_truth_evaluation set_substrate_scope.csv", "Ground_truth_evaluation_set_reaction_diagram.csv")
+    # evaluate_csv
+    # results, file_names = evaluate_reverse_reaction("Ground_truth_evaluation_set_substrate_scope.csv", "Ground_truth_evaluation_set_reaction_diagram.csv")
+    results, file_names = evaluate_csv("Ground_truth_evaluation_set_substrate_scope.csv", "Ground_truth_evaluation_set_reaction_diagram.csv")
     canonical_correct = 0
     canonical_total = 0
     tanimoto_correct = 0
@@ -203,14 +194,16 @@ if __name__ == "__main__":
                            "total": 0} for key in file_names}
     
     for key in results:
-        
+        # print(key + ": " + str(results[key]))
         file_for_curr = ""
         for file in file_accuracy:
             if file in key:
                 file_for_curr = file
                 break
 
-        if results[key] != "ERROR":
+        if type(results[key]) is dict:
+            if any(result == 0 for result in results[key]["tanimoto similarity"]):
+                print(key + ": FAILS")
             for match in results[key]["canonical match"]:
                 if 1 in match:
                     file_accuracy[file_for_curr]["canonical correct"] += 1
@@ -218,17 +211,21 @@ if __name__ == "__main__":
                 file_accuracy[file_for_curr]["canonical total"] += 1
                 canonical_total += 1
             for match in results[key]["tanimoto similarity"]:
-                if match >= 1 / len(results[key]["tanimoto similarity"]):
+                if match > 0:
                     file_accuracy[file_for_curr]["tanimoto correct"] += 1
                     tanimoto_correct += 1
                 file_accuracy[file_for_curr]["tanimoto total"] += 1
                 tanimoto_total += 1
         else:
+            print(key + ": ERROR")
             file_accuracy[file_for_curr]["num errors"] += 1
-            num_errors += 1
+            file_accuracy[file_for_curr]["canonical total"] += 1
+            file_accuracy[file_for_curr]["tanimoto total"] += 1
+            num_errors += results[key][1]
         file_accuracy[file_for_curr]["total"] += 1
             
-    
+    num_schemes = len(file_accuracy)
+    print("##### SUCESS RATE #####")
     for key in file_accuracy:
         if file_accuracy[key]["canonical total"] > 0:
             canonical_accuracy = str(file_accuracy[key]["canonical correct"] / file_accuracy[key]["canonical total"])
@@ -240,11 +237,11 @@ if __name__ == "__main__":
             tanimoto_accuracy = "0"
         percent_errors = str(file_accuracy[key]["num errors"] / file_accuracy[key]["total"])
         print(key + ": canonical accuracy: " + canonical_accuracy + \
-            ", tanimoto accuracy: " + tanimoto_accuracy + ", percent errors: " + percent_errors)
+            ", tanimoto accuracy: " + tanimoto_accuracy)
     
     print("##### RESULTS #####")
-    print("Canonical accuracy: " + str(canonical_correct / canonical_total))
-    print("Tanimoto accuracy: " + str(tanimoto_correct / tanimoto_total))
+    print("Canonical accuracy: " + str(canonical_correct / (canonical_total + num_errors)))
+    print("Tanimoto accuracy: " + str(tanimoto_correct / (tanimoto_total + num_errors)))
     print("Total num with errors: " + str(num_errors))
         
     with open("evaluations_for_reverse_reaction.json", "w") as file:
